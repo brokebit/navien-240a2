@@ -1,0 +1,34 @@
+# Installed by the navien-dash package. Logs: journalctl -u navien-dash -f
+# Stop it before running navien-capture.py: only one process may own the serial port.
+[Unit]
+Description=Navien cascade monitor (RS-485, receive-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=navien
+Group=navien
+SupplementaryGroups=dialout
+StateDirectory=navien-dash
+WorkingDirectory=/var/lib/navien-dash
+ExecStart=/opt/navien-dash/venv/bin/python -m navien --config /etc/navien-dash/navien.toml
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Hardening: read-only system, writable state dir only, real /dev for the serial port.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

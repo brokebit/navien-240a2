@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload || true
+fi
+if [ "$1" = "purge" ]; then
+    # Raw logs in /var/lib/navien-dash are irreplaceable bus captures: kept on purge.
+    # The navien user is left in place too (it may still own those files).
+    if [ -d /var/lib/navien-dash ]; then
+        echo "navien-dash: raw logs kept in /var/lib/navien-dash (delete by hand if unwanted)." >&2
+    fi
+fi
+exit 0

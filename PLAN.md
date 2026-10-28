@@ -90,9 +90,13 @@ tests/
   test_protocol.py test_decode.py test_state.py test_hub.py test_rawlog.py test_api.py test_influx.py
 navien.example.toml
 requirements.txt   fastapi, uvicorn[standard], pyserial, httpx; dev: pytest
-deploy/
-  navien-dash.service   systemd unit
-  99-navien.rules       udev rule: stable /dev/navien symlink by FTDI serial, latency_timer=1
+packaging/              files installed by the .deb (§1.11)
+  navien-dash.service   systemd unit (user navien, hardened)
+  99-navien-dash.rules  udev rule: /dev/navien for any FT232R, latency_timer=1
+  navien-dash.sysusers  service user `navien` in group dialout
+  navien.toml           /etc/navien-dash/navien.toml (conffile)
+  DEBIAN/               control.in, postinst, prerm, postrm, conffiles
+scripts/build-deb.sh    builds dist/navien-dash_<version>_arm64.deb
 ```
 
 `protocol.py`/`decode.py` start as a **port** of the parser, checksum and `light_decode`
@@ -252,13 +256,34 @@ CLI flags override (`--replay`, `--speed`, `--port`, `--http-port`, `--headless`
   policies are configured on the Influx side; the plan documents example CQs but does not
   manage the server.
 
-### 1.11 Deployment
+### 1.11 Deployment: a Debian package per release
 
-- Existing `venv/` on the Pi (Python 3.14, Ubuntu 26.04 aarch64).
-- `deploy/navien-dash.service`: `uvicorn` via `python -m navien`, `Restart=always`, runs as
-  the user in the `dialout` group, working dir = repo.
-- `deploy/99-navien.rules`: `/dev/navien` symlink by FTDI serial number, `latency_timer=1`.
-- Logging: Python `logging` to stdout → journald.
+Decided 2026-10-28: no manual installs; every release is a `.deb`.
+
+- **Versioning:** semver git tags `vX.Y.Z` (Phase 1 = `v0.1.0`, each later phase a minor
+  bump, fixes a patch bump); `phase-N` tags kept alongside. The build derives the package
+  version from `git describe`: `v0.1.0` → `0.1.0`; commits past a tag → `0.1.0+git3.gabc1234`;
+  uncommitted changes (only with `--dev`) → `…dirty`. Dev builds sort after their release.
+- **Build:** `scripts/build-deb.sh [--dev]` on the Pi (arm64, system Python 3.14) →
+  `dist/navien-dash_<version>_arm64.deb`. Plain `dpkg-deb`, no debhelper. Release builds
+  refuse a dirty tree. The build smoke-tests the staged venv (imports + a capture replay).
+- **Dependencies:** a bundled virtualenv in `/opt/navien-dash/venv`, installed `--no-deps`
+  from `requirements.lock` (exact versions we test with) and checked with `pip check`.
+  The package `Depends: python3 (>= 3.14), python3 (<< 3.15)` because the venv links to the
+  system interpreter; a Python minor upgrade needs a rebuild.
+- **Layout:** code `/opt/navien-dash/app` (on the venv's path via a `.pth`), config
+  `/etc/navien-dash/navien.toml` (conffile, survives upgrades), state and raw logs
+  `/var/lib/navien-dash` (systemd `StateDirectory`), CLI wrapper `/usr/bin/navien-dash`,
+  unit `/usr/lib/systemd/system/navien-dash.service`, udev rule
+  `/usr/lib/udev/rules.d/99-navien-dash.rules`, user via `/usr/lib/sysusers.d`.
+- **Service:** runs as system user `navien` (group `dialout`), `ProtectSystem=strict` and
+  related hardening, `Restart=always`, logs to journald.
+- **Maintainer scripts:** postinst creates the user, reloads/triggers udev, enables the unit
+  on first install and restarts it on upgrade (unless disabled); prerm stops it; purge keeps
+  `/var/lib/navien-dash` (raw logs are irreplaceable) and says so.
+- **Install / upgrade:** `sudo apt install ./dist/navien-dash_<version>_arm64.deb`.
+- Development still uses the repo `venv/` (`pip install -r requirements-dev.txt`) and
+  `python -m navien`; stop the packaged service first, since only one process may own the port.
 
 ---
 
@@ -280,7 +305,7 @@ review with the user before the next phase starts. All phases are receive-only.
 6. Tests: parser on all three `captures/*.raw` (frame counts and 0 checksum failures match
    their `.jsonl`), decoder golden values from `PROTOCOL_NOTES.md` §5, state model handling of
    the slave duplicate-gas cycles, rawlog rotation/retention on a temp dir.
-7. udev rule + latency timer.
+7. udev rule + latency timer (now shipped in the package, §1.11).
 
 **Done when:** headless mode runs on the Pi against the live bus for 1 h with 0 unexplained
 resyncs, and the raw log rotates and replays back to identical frames.
@@ -290,7 +315,7 @@ resyncs, and the raw log rotates and replays back to identical frames.
 1. `navien/hub.py`, `navien/api.py` with FastAPI lifespan starting the reader and RawLog threads.
 2. `/api/state`, `/api/history`, `/api/frames`, `/api/fields`, `/api/health`, `/docs`.
 3. Bus-loss handling (adapter unplug → reconnect, `bus_alive=false`).
-4. systemd unit.
+4. systemd unit, shipped in the first `.deb` (§1.11).
 5. Tests: `TestClient` against ReplaySource.
 
 **Done when:** `curl` from another LAN machine returns live state; service survives
@@ -359,3 +384,15 @@ an offline analyzer tool.
   read (it was 2.5× the raw size); the parser accepts any sys_type, which exposed a seventh
   frame per cycle (`50→52`, sys_type `0x13`, PROTOCOL_NOTES §4.6). Outstanding for "done":
   install the udev rule (sudo) and a 1 h live run.
+- 2026-10-28 — Phase 0 committed and tagged `phase-0`. udev rule installed; its latency line
+  only matched `add` events, fixed to `ACTION!="remove"` (needs re-copying).
+- 2026-10-28 — Phase 1 implemented: `service.py`, `hub.py`, `api.py`, headless mode rebuilt on
+  the same Service, `deploy/navien-dash.service`; 45 tests passing; live run over the LAN OK.
+  Changes from the plan: `/api/health` always returns 200 with `status` = `ok`|`no_data`
+  (not 503), so the dashboard can read it; access logging off (journald noise).
+  Outstanding for "done": install the systemd unit (sudo), unplug/replug test.
+- 2026-10-28 — Deployment changed to a Debian package per release (§1.11): bundled venv,
+  `dpkg-deb` build script, `vX.Y.Z` tags, generic FT232R udev rule. Manual `deploy/` files
+  moved to `packaging/`. Requirements split into `requirements.txt` (top level),
+  `requirements.lock` (full pinned runtime set) and `requirements-dev.txt` (+ pytest, httpx2).
+  Phase 1 "done" now means: `v0.1.0` .deb installs, service runs, survives unplug/replug.

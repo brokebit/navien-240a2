@@ -1,7 +1,6 @@
-# Runtime (versions verified on the Pi: Python 3.14, aarch64, 2026-10-28)
-pyserial>=3.5
-fastapi>=0.162
-uvicorn[standard]>=0.54
-httpx>=0.28
-# Development
-pytest>=9.2
+# Runtime dependencies (top level). Exact versions for builds are in requirements.lock;
+# update both together and re-run the tests. Verified on Python 3.14 / arm64.
+pyserial==3.5
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1

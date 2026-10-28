@@ -20,7 +20,7 @@ later InfluxDB 1.x). Its architecture, decisions and phased development plan are
 - Sniffer: Waveshare "USB TO RS485 (C)" (FT232RNL, galvanically isolated, hardware
   auto-direction, fixed onboard 120 Ω termination). Wired A+→A, B−→B, GND→heater GND.
 - Host: Raspberry Pi 4, Ubuntu 26.04 (aarch64), Python 3.14 in `venv/`. Adapter shows up as
-  `/dev/ttyUSB0` (`ftdi_sio`); PLAN.md adds a udev rule for a stable `/dev/navien`.
+  `/dev/ttyUSB0` (`ftdi_sio`); the package's udev rule adds a stable `/dev/navien`.
   Powered by a Mean Well RS-25-5.
 - FTDI default `latency_timer` is 16 ms, so the existing captures' timestamps are quantised
   to 16 ms. Set it to 1 ms for timing work.
@@ -86,15 +86,36 @@ over one minute as inlet temp fell — **unknown, probably cascade load/demand; 
 ## Files
 
 - `PLAN.md` — dashboard service architecture, decisions, phased development plan.
-- `navien/` — the service package (Phase 0 done: protocol, decode, state, rawlog, sources).
-  `venv/bin/python -m navien --port /dev/ttyUSB0` (live, headless, raw log to `raw/`) or
-  `venv/bin/python -m navien --replay <file.raw[.gz]> [--speed 0]`. Field tables in
-  `navien/decode.py` are the code's byte map; keep them in step with PROTOCOL_NOTES.md.
+- `navien/` — the service package. Phase 0: protocol, decode, state, rawlog, source.
+  Phase 1: `service.py` (wiring, reader thread → event loop), `hub.py` (fan-out),
+  `api.py` (FastAPI REST, OpenAPI at `/docs`).
+  `venv/bin/python -m navien` serves http://<pi>:8000 from the live bus (config `./navien.toml`,
+  gitignored; copy of `navien.example.toml`). `--headless` prints cycles instead;
+  `--replay <file.raw[.gz]> [--speed 0|N] [--loop]` replaces the serial port (no raw logging).
+  Field tables in `navien/decode.py` are the code's byte map; keep them in step with PROTOCOL_NOTES.md.
 - `tests/` — `venv/bin/python -m pytest`. Runs against `captures/`, which is gitignored
   (local to the Pi), so the capture-based tests only run here.
 - `raw/` (gitignored) — the service's rotating raw log, `navien_<UTC period>.raw` + `.idx`
   (frame-start timestamps). Re-parse these with `navien.source.load_chunks`.
-- `deploy/99-navien.rules` — udev rule: `/dev/navien` symlink + FTDI latency 1 ms. Needs sudo to install.
+- `packaging/` + `scripts/build-deb.sh` — the Debian package (PLAN.md §1.11): systemd unit,
+  udev rule (`/dev/navien`, FTDI latency 1 ms), sysusers, default `/etc` config, maintainer
+  scripts. Nothing is installed by hand any more.
+- `requirements.txt` (top level), `requirements.lock` (exact runtime set bundled in the .deb),
+  `requirements-dev.txt` (+ pytest, httpx2). Change a version → update the lock, run tests.
+
+## Releases
+
+1. Tests pass; docs (PLAN.md changelog, PROTOCOL_NOTES.md) updated; commit.
+2. Tag `vX.Y.Z` (Phase N → `v0.N.0`; fixes bump the patch) and, at the end of a phase, `phase-N`.
+3. `scripts/build-deb.sh` → `dist/navien-dash_X.Y.Z_arm64.deb` (refuses a dirty tree;
+   `--dev` builds `…+git….dirty` test packages).
+4. The user installs: `sudo apt install ./dist/navien-dash_X.Y.Z_arm64.deb`. Never run sudo
+   or install packages on the user's behalf.
+
+Installed layout: code `/opt/navien-dash`, config `/etc/navien-dash/navien.toml`, raw logs
+`/var/lib/navien-dash/raw`, `journalctl -u navien-dash`, CLI `navien-dash` (same flags as
+`python -m navien`). Stop the service (`sudo systemctl stop navien-dash`) before running
+the dev tree or `navien-capture.py` against the port.
 - `navien-capture.py` — standalone, receive-only proof-of-concept sniffer.
   `python3 navien-capture.py --port /dev/ttyUSB0 --seconds 90`.
   Writes `<prefix>.raw` (every byte) and `<prefix>.jsonl` (one record per frame: timestamp,

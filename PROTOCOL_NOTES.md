@@ -289,6 +289,10 @@ the NavienManager list this note was first written from, and **disagrees on `0x2
 
 Use the upstream names; `0x20` → "startup" fits what we see (first cycle after flow begins).
 
+`0x49` (DHW wait / set-point match) first seen 2026-10-28 15:24 local on the **slave**: no
+flow, heating mode idle, outlet 49 °C / inlet 45 °C, up from 41.5 / 41 °C at 15:13. Nothing
+was logging in between, so the slave probably fired unobserved (`raw/navien_20261028T20Z.raw`).
+
 Capacity sanity check: 4.2 L/min × ΔT 9.5 K ≈ 2 400 kcal/h delivered to water ≈ 5 % of the
 unit's 50 400 kcal/h (199 900 BTU/h) rating, vs. 5.5 % reported — consistent with %×2
 encoding, allowing for heat-exchanger warm-up.

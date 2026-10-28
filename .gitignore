@@ -4,4 +4,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 raw/
-navien.toml
+/navien.toml
+build/
+dist/

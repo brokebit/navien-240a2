@@ -109,19 +109,19 @@ class StateModel:
         if self.cascade is not None:
             ts, d = self.cascade
             cascade = dict(d, age_s=round(now - ts, 3))
-        cycle_ms = None
-        if self.cycle_start is not None and self.prev_cycle_start is not None:
-            cycle_ms = round((self.cycle_start - self.prev_cycle_start) * 1000)
         return {
             "type": "cycle",
             "ts": round(now, 3),
             "seq": self.seq,
             "units": units,
             "cascade": cascade,
-            "bus": self.bus_stats(cycle_ms),
+            "bus": self.bus_stats(),
         }
 
-    def bus_stats(self, cycle_ms: int | None = None) -> dict:
+    def bus_stats(self) -> dict:
+        cycle_ms = None
+        if self.cycle_start is not None and self.prev_cycle_start is not None:
+            cycle_ms = round((self.cycle_start - self.prev_cycle_start) * 1000)
         return {
             "frames": self.frames_total,
             "checksum_fail": self.checksum_fail,

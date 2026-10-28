@@ -1,7 +1,0 @@
-# Waveshare USB TO RS485 (C), FT232RNL. Install:
-#   sudo cp deploy/99-navien.rules /etc/udev/rules.d/ && sudo udevadm control --reload
-#   then: sudo udevadm trigger -s tty -s usb-serial   (or unplug/replug the adapter)
-# Gives a stable /dev/navien and sets the FTDI latency timer to 1 ms (default 16 ms
-# quantises every timestamp to 16 ms).
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="BG04PPSM", SYMLINK+="navien", GROUP="dialout", MODE="0660"
-ACTION!="remove", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"

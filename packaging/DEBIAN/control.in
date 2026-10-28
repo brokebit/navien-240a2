@@ -1,0 +1,17 @@
+Package: navien-dash
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Eric Dynowski <eric@dynowski.com>
+Section: misc
+Priority: optional
+Depends: python3 (>= @PYMIN@), python3 (<< @PYNEXT@), systemd, udev
+Installed-Size: @SIZE@
+Homepage: https://github.com/brokebit/navien-240a2
+Description: live monitor for a Navien NPE-240A2 cascade on RS-485
+ Passive, receive-only reader of the RS-485 bus shared by cascaded Navien
+ NPE-240A2 tankless water heaters. Decodes every frame, keeps a short live
+ history and a rotated raw log, and serves a JSON API (and, in later
+ releases, a live dashboard) on port 8000.
+ .
+ Ships its own Python virtualenv in /opt/navien-dash, built against the
+ system python3 of the build host.

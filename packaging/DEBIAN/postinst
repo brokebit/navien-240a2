@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    systemd-sysusers navien-dash.conf
+    install -d -o navien -g navien -m 0750 /var/lib/navien-dash
+    # Byte-compile the bundled code and venv (removed again in prerm).
+    /opt/navien-dash/venv/bin/python -m compileall -q /opt/navien-dash >/dev/null 2>&1 || true
+
+    if [ -e /etc/udev/rules.d/99-navien.rules ]; then
+        echo "navien-dash: /etc/udev/rules.d/99-navien.rules is a leftover manual install;" >&2
+        echo "             the package ships 99-navien-dash.rules. Remove the old file." >&2
+    fi
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload || true
+        udevadm trigger --action=change --subsystem-match=tty --subsystem-match=usb-serial || true
+    fi
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        if [ -z "$2" ]; then
+            systemctl enable navien-dash.service
+        fi
+        if systemctl is-enabled --quiet navien-dash.service; then
+            systemctl restart navien-dash.service
+        fi
+    fi
+fi
+exit 0

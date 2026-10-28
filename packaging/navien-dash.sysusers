@@ -1,0 +1,3 @@
+# navien-dash service user; dialout for the RS-485 adapter.
+u navien - "Navien cascade monitor" /var/lib/navien-dash
+m navien dialout

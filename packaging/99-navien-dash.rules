@@ -1,0 +1,10 @@
+# navien-dash: RS-485 adapter (Waveshare USB TO RS485 (C), FTDI FT232R, 0403:6001).
+#
+# /dev/navien -> the first FT232R adapter. If a second FT232R is ever attached, override
+# this file with /etc/udev/rules.d/99-navien-dash.rules matching ATTRS{serial} as well
+# (this installation's adapter: BG04PPSM).
+#
+# The FTDI latency timer defaults to 16 ms, which quantises every timestamp to 16 ms;
+# set it to 1 ms on add and change (so `udevadm trigger` applies it without a replug).
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="navien", GROUP="dialout", MODE="0660"
+ACTION!="remove", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"
