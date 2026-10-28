@@ -415,3 +415,15 @@ an offline analyzer tool.
   `http.ws_send_timeout_s` config. Protocol as in §1.6 (adds `unsubscribe`, `get history`,
   `error`). 51 tests. Soak on replay at 10× for 7 min: 5 clients × 4 129 cycles, 0 missing,
   0 gaps; one also took 28 919 frames; a stalled client was closed by uvicorn's ping after ~40 s.
+- 2026-10-28 — Phase 3a implemented: `navien/web/` (index.html, app.js, units.js, debug.js,
+  style.css), served at `/` with `Cache-Control: no-cache`; JSON index moved to `/api`.
+  Household view (system tiles, per-unit cards with stage/flame, temps, flow, gas, burner
+  output meter, recirculation, error pill, unit info with the unverified counters), status
+  pill + adapter error detail from `/api/health`, reconnect with backoff and history re-sync
+  on `gap`, unit toggles defaulting to °F/GPM/BTU/h, debug view (hex rows in cycle order,
+  change highlighting at <3/15/60 s, field overlay by confidence, tap-a-byte detail with
+  value range, bus counters, pausable frame log). Colours from the dataviz reference palette
+  (unit identity = categorical slots 1/2; status colours only for health, always with icon +
+  label); live values use tabular figures so they don't jitter. No JS engine or browser on
+  the Pi: the JS was checked statically only, so the user's desktop/phone check is the real test.
+

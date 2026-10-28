@@ -32,10 +32,21 @@ def replay_client():
 
 
 def test_index_and_docs(replay_client):
-    assert "/api/state" in replay_client.get("/").json()["endpoints"]
+    assert "/api/state" in replay_client.get("/api").json()["endpoints"]
     assert replay_client.get("/docs").status_code == 200
     paths = replay_client.get("/openapi.json").json()["paths"]
     assert {"/api/state", "/api/history", "/api/frames", "/api/fields", "/api/health"} <= set(paths)
+
+
+def test_dashboard_is_served(replay_client):
+    r = replay_client.get("/")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "<title>Navien cascade</title>" in r.text and r.headers["cache-control"] == "no-cache"
+    for name in ("app.js", "units.js", "debug.js", "style.css"):
+        r = replay_client.get(f"/{name}")
+        assert r.status_code == 200, name
+    assert "javascript" in replay_client.get("/app.js").headers["content-type"]
+    assert replay_client.get("/nope.js").status_code == 404
 
 
 def test_state(replay_client):

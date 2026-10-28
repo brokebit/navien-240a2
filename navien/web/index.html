@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Navien cascade</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <h1>Navien cascade</h1>
+    <div id="conn" class="pill status-warning" role="status" aria-live="polite">
+      <span class="icon" aria-hidden="true"></span><span class="label">Connecting…</span>
+    </div>
+  </div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Temperature unit" data-pref="temp">
+      <button type="button" data-value="F">°F</button><button type="button" data-value="C">°C</button>
+    </div>
+    <div class="seg" role="group" aria-label="Flow unit" data-pref="flow">
+      <button type="button" data-value="gpm">GPM</button><button type="button" data-value="lpm">L/min</button>
+    </div>
+    <div class="seg" role="group" aria-label="Gas rate unit" data-pref="gas">
+      <button type="button" data-value="btu">BTU/h</button><button type="button" data-value="kcal">kcal/h</button>
+    </div>
+    <label class="switch"><input type="checkbox" id="debug-toggle"><span>Debug</span></label>
+  </div>
+</header>
+
+<main>
+  <p id="conn-detail" class="conn-detail" hidden></p>
+
+  <section class="system" aria-label="Cascade summary">
+    <div class="tile"><div class="tile-label">Burners firing</div><div class="tile-value" id="sys-firing">–</div></div>
+    <div class="tile"><div class="tile-label">Total flow</div><div class="tile-value"><span id="sys-flow">–</span> <span class="unit" data-unit="flow"></span></div></div>
+    <div class="tile"><div class="tile-label">Total gas rate</div><div class="tile-value"><span id="sys-gas">–</span> <span class="unit" data-unit="gas"></span></div></div>
+    <div class="tile"><div class="tile-label">Setpoint</div><div class="tile-value"><span id="sys-set">–</span><span class="unit" data-unit="temp"></span></div></div>
+  </section>
+
+  <section id="units" class="units" aria-label="Heaters"></section>
+
+  <section id="debug" class="debug" hidden aria-label="Debug: raw bus frames">
+    <div class="debug-head">
+      <h2>Bus frames</h2>
+      <p class="legend">
+        <span class="b k-measured">00</span> decoded, measured
+        <span class="b k-upstream">00</span> decoded, upstream
+        <span class="b k-unverified">00</span> decoded, unverified
+        <span class="b">00</span> unknown
+        <span class="b chg-1">00</span> changed &lt;3 s
+        <span class="b chg-2">00</span> &lt;15 s
+        <span class="b chg-3">00</span> &lt;60 s
+        · tap a byte for details
+      </p>
+    </div>
+    <div id="streams" class="streams"></div>
+    <div id="byte-detail" class="byte-detail" hidden></div>
+    <div class="debug-cols">
+      <div>
+        <h3>Bus counters</h3>
+        <dl id="bus-counters" class="kv"></dl>
+      </div>
+      <div class="framelog-wrap">
+        <h3>Recent frames <button type="button" id="framelog-pause" class="small">Pause</button></h3>
+        <pre id="framelog" class="framelog"></pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span id="foot-source">–</span> · updated <span id="foot-age">–</span> ·
+  <a href="/docs">API</a>
+</footer>
+
+<template id="unit-card">
+  <article class="card">
+    <header class="card-head">
+      <h2><span class="swatch" aria-hidden="true"></span><span class="role"></span> <span class="idx muted"></span></h2>
+      <div class="pills">
+        <span class="pill stage"><span class="flame" aria-hidden="true"></span><span class="label"></span></span>
+        <span class="pill status-critical err" hidden><span class="icon" aria-hidden="true"></span><span class="label"></span></span>
+      </div>
+    </header>
+    <p class="stale" hidden></p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-label">Outlet</div><div class="tile-value"><span data-f="outlet_c"></span><span class="unit" data-unit="temp"></span></div></div>
+      <div class="tile"><div class="tile-label">Inlet</div><div class="tile-value"><span data-f="inlet_c"></span><span class="unit" data-unit="temp"></span></div></div>
+      <div class="tile"><div class="tile-label">Setpoint</div><div class="tile-value"><span data-f="set_c"></span><span class="unit" data-unit="temp"></span></div></div>
+      <div class="tile"><div class="tile-label">Flow</div><div class="tile-value"><span data-f="flow_lpm"></span> <span class="unit" data-unit="flow"></span></div></div>
+      <div class="tile"><div class="tile-label">Gas rate</div><div class="tile-value"><span data-f="gas_kcalh"></span> <span class="unit" data-unit="gas"></span></div></div>
+      <div class="tile">
+        <div class="tile-label">Burner output</div>
+        <div class="tile-value"><span data-f="heat_capacity_pct"></span><span class="unit">%</span></div>
+        <div class="meter" aria-hidden="true"><div class="meter-fill"></div></div>
+      </div>
+    </div>
+    <dl class="facts">
+      <div><dt>Mode</dt><dd data-f="heating_mode"></dd></div>
+      <div><dt>Recirculation</dt><dd data-f="recirc"></dd></div>
+      <div><dt>Power</dt><dd data-f="power_on"></dd></div>
+      <div><dt>Operating capacity</dt><dd data-f="capacity_pct"></dd></div>
+    </dl>
+    <details class="info">
+      <summary>Unit info</summary>
+      <dl class="kv">
+        <dt>Model</dt><dd data-f="device_type"></dd>
+        <dt>Controller / panel</dt><dd data-f="versions"></dd>
+        <dt>Panel display</dt><dd data-f="display"></dd>
+        <dt>Error code / level</dt><dd data-f="error"></dd>
+        <dt>Data age</dt><dd data-f="age"></dd>
+      </dl>
+      <p class="muted small">Counters below come from upstream decodes and read implausibly low here; treat as <strong>unverified</strong>.</p>
+      <dl class="kv">
+        <dt>Gas used</dt><dd data-f="gas_total_m3"></dd>
+        <dt>Days since install</dt><dd data-f="days_since_install"></dd>
+        <dt>DHW uses</dt><dd data-f="dhw_uses"></dd>
+        <dt>Operating hours</dt><dd data-f="operating_hours"></dd>
+      </dl>
+    </details>
+  </article>
+</template>
+</body>
+</html>

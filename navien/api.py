@@ -9,11 +9,25 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI, Query, WebSocket
+from fastapi.staticfiles import StaticFiles
 
 from .decode import fields_table
 from .service import Service
 from .ws import API_VERSION, WsSession
+
+WEB_DIR = Path(__file__).parent / "web"
+
+
+class DashboardFiles(StaticFiles):
+    """Static dashboard; `no-cache` makes browsers revalidate (ETag) so an upgrade shows at once."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def create_app(service: Service) -> FastAPI:
@@ -37,7 +51,7 @@ def create_app(service: Service) -> FastAPI:
     max_history = service.cfg.state.history_seconds
     max_frames = service.cfg.state.frame_buffer
 
-    @app.get("/", tags=["meta"], summary="Index (the dashboard replaces this in Phase 3a)")
+    @app.get("/api", tags=["meta"], summary="API index")
     async def index():
         return {"name": "navien", "api_version": API_VERSION,
                 "endpoints": ["/api/state", "/api/history", "/api/frames", "/api/fields",
@@ -79,4 +93,6 @@ def create_app(service: Service) -> FastAPI:
         except Exception:
             pass
 
+    # Last: the mount at "/" would otherwise shadow the routes above.
+    app.mount("/", DashboardFiles(directory=WEB_DIR, html=True), name="dashboard")
     return app
