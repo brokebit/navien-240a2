@@ -1,0 +1,126 @@
+# Navien NPE-240A2 cascade — RS-485 bus decoding
+
+## What this project is
+
+Reverse-engineering and monitoring the RS-485 bus of two Navien NPE-240A2 tankless
+water heaters running in cascade (unit 0 = master, unit 1 = slave). The goal is a
+passive monitor first (log every field from both units), then possibly control
+(setpoint, power, recirculation) later. Work so far was done in a claude.ai chat;
+this file plus `PROTOCOL_NOTES.md` is the handoff. Read `PROTOCOL_NOTES.md` before
+touching the decoder.
+
+The current build effort is a live dashboard service (FastAPI, WebSockets, raw logging,
+later InfluxDB 1.x). Its architecture, decisions and phased development plan are in
+`PLAN.md`; read it before writing service or dashboard code.
+
+## Hardware
+
+- Two NPE-240A2, cascaded over a 2-wire A/B cable between their RS-485 ports.
+  The port also exposes GND and ~13 V (NaviLink accessory power); 13 V is never used.
+- Sniffer: Waveshare "USB TO RS485 (C)" (FT232RNL, galvanically isolated, hardware
+  auto-direction, fixed onboard 120 Ω termination). Wired A+→A, B−→B, GND→heater GND.
+- Host: Raspberry Pi 4, Ubuntu 26.04 (aarch64), Python 3.14 in `venv/`. Adapter shows up as
+  `/dev/ttyUSB0` (`ftdi_sio`); PLAN.md adds a udev rule for a stable `/dev/navien`.
+  Powered by a Mean Well RS-25-5.
+- FTDI default `latency_timer` is 16 ms, so the existing captures' timestamps are quantised
+  to 16 ms. Set it to 1 ms for timing work.
+- No NaviLink device is on the bus. NaviLink must be enabled in the installer menu
+  for the heater to accept commands; this has not been needed for passive capture.
+
+## Bus facts (measured on this installation, 2026-10-28 capture)
+
+- 19200 baud, 8N1. Frame: `F7 | sys_type | src | dst | dir | len | payload[len] | checksum`.
+- **sys_type is `0x02` on these units** (single NPEs in the community repos report
+  `0x05`, NHB-H `0x04`). Anything we ever transmit must use `0x02`.
+- Checksum: seed by *source* — every frame from `0x50` uses seed `0x4B`, everything
+  else (`0x51` slave, `0x0F` controller) uses `0x62`. Algorithm in `navien-capture.py`
+  (`navien_checksum`), verified against all 360 frames of the capture and the
+  published single-unit examples.
+- Addresses: `0x50` master, `0x51` slave, `0x0F` controller/NaviLink, `0x01` panel.
+  `dst=0x50` = "water" status, `dst=0x0F` = "gas" status. `dir 0x90` status, `0x10` control.
+- Fixed 1.000 s cycle, six frames, always this order:
+
+  | t (ms) | frame | payload type byte | notes |
+  |---|---|---|---|
+  | 0 | `50→51` dir 10, len 34 | `0x41` | master → slave: master's own state, one cycle late |
+  | ~60 | `51→50` dir 90, len 34 | `0x42` | slave water |
+  | ~110 | `51→0F` dir 90, len 42 | `0x45` | slave gas (occasionally sent twice, water skipped) |
+  | ~400 | `50→50` dir 90, len 34 | `0x42` | master water |
+  | ~600 | `50→0F` dir 90, len 42 | `0x45` | master gas |
+  | ~800 | `50→50` dir 10, len 34 | `0x44` | master, constant `44 00 14 1E 0A 00…`, unknown |
+
+  The slave only speaks in the ~150 ms after the master's `0x41` poll. The ~150 ms
+  quiet gaps are where a controller transmits (community rule: wait ≥20 ms of silence).
+
+## Byte map (frame index, 0 = the F7 byte; payload index = frame index − 6)
+
+Confirmed on this installation unless marked.
+
+**Water frame (`dst 0x50`, len 34):**
+`[8]` flags: `0x20` consumption/flow, `0x08` recirc running · `[9]` power (low nibble 5 = on) ·
+`[10]` burner stage (see STAGES in script: 14 standby, 20 demand, 29 pre-purge, 2C flame-on,
+2D ramp, 33 combustion, 3C flame-off, 46 post-purge) · `[11]` setpoint °C×2 ·
+`[12]` outlet °C×2 · `[13]` inlet °C×2 · `[17]` capacity %×2 · `[18]` flow L/min×10 ·
+`[24]` status bits (`0x08` metric display) · `[27]` flame on (0/1) · `[33]` bit `0x02` recirc enabled.
+Role markers: `[7]` 00 master / 20 slave; `[30]` 02 master / 03 slave.
+
+**Gas frame (`dst 0x0F`, len 42):**
+`[8..12]` probably version bytes (`0C 02 0C 07 1B` on both units) · `[14]` setpoint ·
+`[15]` outlet · `[16]` inlet (all °C×2) · `[20]` coarse burner power (≈ kcal>>8, 0 during ignition) ·
+`[22..23]` current gas, kcal/h, little-endian · `[24]` claimed lifetime gas ×0.1 m³ — **doubtful**
+(reads 30 master / 50 slave) · `[46]` 01 master / 00 slave.
+
+**Master→slave `0x41` frame (len 34):** same layout as water for `[8]`, `[11]`, `[12]`, `[13]`,
+`[17]`, `[18]` (temps freeze at last-draw values when idle) · `[9]` = 01 idle / 05 demand / 07 flame ·
+`[16]` 00/01 active · `[25]` bit `0x04` toggles ~every 13 s (unknown) ·
+`[26] [27] [28]` three slowly varying bytes, `[28] == [26] + 40`, rose 61/30/101 → 93/42/133
+over one minute as inlet temp fell — **unknown, probably cascade load/demand; top priority to decode.**
+
+## Files
+
+- `PLAN.md` — dashboard service architecture, decisions, phased development plan.
+- `navien-capture.py` — standalone, receive-only proof-of-concept sniffer.
+  `python3 navien-capture.py --port /dev/ttyUSB0 --seconds 90`.
+  Writes `<prefix>.raw` (every byte) and `<prefix>.jsonl` (one record per frame: timestamp,
+  header fields, hex payload, checksum/seed, `decode{}` of known fields). Prints a cadence
+  summary per `src>dst/dir` stream at the end. Needs `pyserial`. It is **not** imported by
+  the service and is not being refactored; the service's `navien/` package (PLAN.md) ports its
+  parser and becomes the source of truth for the byte map. It cannot run while the service
+  holds the serial port.
+- `captures/navien_capture_20261028_123030.{raw,jsonl}` — 60 s, 360 frames, 0 checksum
+  failures. Master did two burn cycles (one tap running, ~4.3 L/min); slave idle throughout.
+  This is the capture `PROTOCOL_NOTES.md` is based on.
+- `captures/navien_capture_20261028_125418.*` (266 frames) and `…_125728.*` (360 frames) —
+  later captures, 0 checksum failures, same schedule; contents not yet written up.
+- `PROTOCOL_NOTES.md` — full findings, per-byte tables for every stream, open questions,
+  references to the community repos this builds on.
+
+## Working rules
+
+- **Never transmit on the bus unless the user explicitly asks for that step.** The script is
+  receive-only by design. When TX is eventually added: sys_type `0x02`, src `0x0F`, seed `0x62`,
+  send only after ≥20 ms bus silence, target `dst 0x50`, and verify effect by watching the
+  next status frames (the heater sends no ack).
+- Keep raw captures; re-parse from `.raw`, never from memory of what a byte "should" be.
+  The service keeps a rotated raw log permanently (PLAN.md §1.5).
+- Exactly one process may own the serial port, and only its reader thread touches it.
+  Run the service as a single uvicorn worker.
+- Use frame indices (0 = F7) in code and notes; say "payload index" explicitly if used.
+- Treat community decodes (single-unit NPE/NCB/NHB) as hypotheses to verify on this cascade,
+  not facts. Several already differ (sys_type, slave seed, the `0x41` frame's meaning).
+
+## Next steps
+
+Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebSocket →
+3a text dashboard → 3b charts → 4 InfluxDB). Each phase is reviewed with the user before
+the next starts.
+
+Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):
+
+1. Capture 3–5 min with enough demand to make the **slave fire** (two showers / tub fill),
+   logging wall-clock tap open/close times. Needed for: slave stage sequence, the `0x41`
+   frame at hand-off, meaning of `[26..28]`.
+2. Capture a recirculation event (HotButton or schedule) to pin `[8]` bit `0x08`, `[33]`, `[25]`.
+3. Compare gas `[24]` and the version bytes against the installer-menu display values.
+4. Only then, and only when the user asks: NaviLink-present announce packet
+   (`F7 02 0F 50 10 03 4A 00 01 + cs`) as a first TX experiment. Out of scope for PLAN.md.
