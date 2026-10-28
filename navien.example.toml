@@ -1,0 +1,33 @@
+# Copy to navien.toml and edit. Every key is optional; these are the defaults.
+# Run: venv/bin/python -m navien --config navien.toml
+
+[serial]
+port = "/dev/navien"          # udev symlink from deploy/99-navien.rules (or /dev/ttyUSB0)
+baud = 19200
+
+[http]                        # Phase 1
+host = "0.0.0.0"
+port = 8000
+
+[state]
+history_seconds = 300         # in-memory history window for the dashboard
+frame_buffer = 600            # recent raw frames kept for the debug view
+bus_timeout_s = 3.0           # no frames for this long -> bus considered down
+
+[rawlog]                      # always on for the live bus; never for --replay
+dir = "raw"
+rotate = "hourly"             # hourly | daily (UTC)
+compress = true               # gzip closed periods
+keep_days = 60
+max_total_mb = 2048
+flush_seconds = 5.0
+
+[influx]                      # Phase 4
+enabled = false
+url = "http://localhost:8086"
+database = "navien"
+username = ""
+password = ""
+retention_policy = ""
+batch_seconds = 10.0
+max_queue = 3600

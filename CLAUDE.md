@@ -38,13 +38,14 @@ later InfluxDB 1.x). Its architecture, decisions and phased development plan are
   published single-unit examples.
 - Addresses: `0x50` master, `0x51` slave, `0x0F` controller/NaviLink, `0x01` panel.
   `dst=0x50` = "water" status, `dst=0x0F` = "gas" status. `dir 0x90` status, `0x10` control.
-- Fixed 1.000 s cycle, six frames, always this order:
+- Fixed 1.000 s cycle, seven frames, always this order:
 
   | t (ms) | frame | payload type byte | notes |
   |---|---|---|---|
   | 0 | `50→51` dir 10, len 34 | `0x41` | master → slave: master's own state, one cycle late |
   | ~60 | `51→50` dir 90, len 34 | `0x42` | slave water |
   | ~110 | `51→0F` dir 90, len 42 | `0x45` | slave gas (occasionally sent twice, water skipped) |
+  | ~210 | `50→52` dir 10, len 3 | `0x40` | **sys_type `0x13`**, constant `40 00 04`; poll of absent unit 2? (PROTOCOL_NOTES §4.6). The capture script drops it |
   | ~400 | `50→50` dir 90, len 34 | `0x42` | master water |
   | ~600 | `50→0F` dir 90, len 42 | `0x45` | master gas |
   | ~800 | `50→50` dir 10, len 34 | `0x44` | master, constant `44 00 14 1E 0A 00…`, unknown |
@@ -56,19 +57,25 @@ later InfluxDB 1.x). Its architecture, decisions and phased development plan are
 
 Confirmed on this installation unless marked.
 
+Cross-checked against htumanyan/navien on 2026-10-28 (PROTOCOL_NOTES.md §9).
+
 **Water frame (`dst 0x50`, len 34):**
-`[8]` flags: `0x20` consumption/flow, `0x08` recirc running · `[9]` power (low nibble 5 = on) ·
-`[10]` burner stage (see STAGES in script: 14 standby, 20 demand, 29 pre-purge, 2C flame-on,
-2D ramp, 33 combustion, 3C flame-off, 46 post-purge) · `[11]` setpoint °C×2 ·
-`[12]` outlet °C×2 · `[13]` inlet °C×2 · `[17]` capacity %×2 · `[18]` flow L/min×10 ·
-`[24]` status bits (`0x08` metric display) · `[27]` flame on (0/1) · `[33]` bit `0x02` recirc enabled.
-Role markers: `[7]` 00 master / 20 slave; `[30]` 02 master / 03 slave.
+`[8]` heating mode enum: `00` idle, `08` DHW recirc, `20` DHW demand · `[9]` system power
+(bit `0x01` on; `0x20` = no HotButton fitted) · `[10]` operating state (14 standby, 20 startup,
+29 pre-purge 2, 2C flame-on, 2D ramp, 33 combustion, 3C flame-off, 46 post-purge; full enum in
+PROTOCOL_NOTES §5) · `[11]` setpoint °C×2 · `[12]` outlet °C×2 · `[13]` inlet °C×2 ·
+`[14..15]` error code LE · `[16]` error level · `[17]` capacity %×2 · `[18]` flow L/min×10 ·
+`[24]` status bits (`0x08` display °C, `0x01`/`0x02` int/ext scheduled recirc) · `[27]` flame on ·
+`[33]` recirc flags (`0x01` HotButton active, `0x02` scheduled recirc enabled).
+Role marker: `[7]` 00 master / 20 slave. (`[30]` is *not* a role marker; it's an unknown counter.)
 
 **Gas frame (`dst 0x0F`, len 42):**
-`[8..12]` probably version bytes (`0C 02 0C 07 1B` on both units) · `[14]` setpoint ·
-`[15]` outlet · `[16]` inlet (all °C×2) · `[20]` coarse burner power (≈ kcal>>8, 0 during ignition) ·
-`[22..23]` current gas, kcal/h, little-endian · `[24]` claimed lifetime gas ×0.1 m³ — **doubtful**
-(reads 30 master / 50 slave) · `[46]` 01 master / 00 slave.
+`[8]` device type (`0C` = CAS_NPE2) · `[10]` controller version (`0C` → 1.2) · `[12]` panel
+version (`1B` → 2.7) · `[14]` setpoint · `[15]` outlet · `[16]` inlet (all °C×2) ·
+`[20]` heat capacity %×2 (verified = kcal/h ÷ 50 400 rating) · `[21]` bit `0x01` display °F ·
+`[22..23]` current gas, kcal/h, LE (upstream claims ×10 — our data says no) ·
+`[24..25]` cumulative gas ×0.1 m³ · `[28..29]` days since install · `[30..31]` DHW use count ·
+`[36..37]` operating hours — the counters read implausibly low, **unverified** · `[46]` 01 master / 00 slave.
 
 **Master→slave `0x41` frame (len 34):** same layout as water for `[8]`, `[11]`, `[12]`, `[13]`,
 `[17]`, `[18]` (temps freeze at last-draw values when idle) · `[9]` = 01 idle / 05 demand / 07 flame ·
@@ -79,6 +86,15 @@ over one minute as inlet temp fell — **unknown, probably cascade load/demand; 
 ## Files
 
 - `PLAN.md` — dashboard service architecture, decisions, phased development plan.
+- `navien/` — the service package (Phase 0 done: protocol, decode, state, rawlog, sources).
+  `venv/bin/python -m navien --port /dev/ttyUSB0` (live, headless, raw log to `raw/`) or
+  `venv/bin/python -m navien --replay <file.raw[.gz]> [--speed 0]`. Field tables in
+  `navien/decode.py` are the code's byte map; keep them in step with PROTOCOL_NOTES.md.
+- `tests/` — `venv/bin/python -m pytest`. Runs against `captures/`, which is gitignored
+  (local to the Pi), so the capture-based tests only run here.
+- `raw/` (gitignored) — the service's rotating raw log, `navien_<UTC period>.raw` + `.idx`
+  (frame-start timestamps). Re-parse these with `navien.source.load_chunks`.
+- `deploy/99-navien.rules` — udev rule: `/dev/navien` symlink + FTDI latency 1 ms. Needs sudo to install.
 - `navien-capture.py` — standalone, receive-only proof-of-concept sniffer.
   `python3 navien-capture.py --port /dev/ttyUSB0 --seconds 90`.
   Writes `<prefix>.raw` (every byte) and `<prefix>.jsonl` (one record per frame: timestamp,
@@ -92,6 +108,7 @@ over one minute as inlet temp fell — **unknown, probably cascade load/demand; 
   This is the capture `PROTOCOL_NOTES.md` is based on.
 - `captures/navien_capture_20261028_125418.*` (266 frames) and `…_125728.*` (360 frames) —
   later captures, 0 checksum failures, same schedule; contents not yet written up.
+  None of the `captures/` files have an `.idx`; replay synthesises timing from the schedule.
 - `PROTOCOL_NOTES.md` — full findings, per-byte tables for every stream, open questions,
   references to the community repos this builds on.
 
@@ -107,7 +124,8 @@ over one minute as inlet temp fell — **unknown, probably cascade load/demand; 
   Run the service as a single uvicorn worker.
 - Use frame indices (0 = F7) in code and notes; say "payload index" explicitly if used.
 - Treat community decodes (single-unit NPE/NCB/NHB) as hypotheses to verify on this cascade,
-  not facts. Several already differ (sys_type, slave seed, the `0x41` frame's meaning).
+  not facts. Several already differ (sys_type `0x02` vs their `0x05` templates, the current-gas
+  scale, the `0x41` frame's meaning and checksum seed).
 
 ## Next steps
 

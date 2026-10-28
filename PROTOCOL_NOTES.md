@@ -1,9 +1,11 @@
 # Navien NPE-240A2 cascade — RS-485 protocol notes
 
 Status as of 2026-10-28. Everything marked **measured** comes from
-`captures/navien_capture_20261028_123030.jsonl` (60 s, 360 frames, all checksums valid,
-no resyncs). Everything marked *community* comes from the single-unit reverse-engineering
-projects listed at the end and has not been verified here unless stated.
+`captures/navien_capture_20261028_123030.raw` (60 s, 420 frames, all checksums valid; the
+capture script counted only 360 because it dropped the §4.6 frames as resyncs), unless
+another source is named. Everything marked *community* or *upstream* comes from the reverse-engineering
+projects listed in §8 and has not been verified here unless stated. §9 records an audit
+against htumanyan/navien (commit `b49bdfc`) and what it changed in these notes.
 
 Byte offsets in the §4 tables are listed as **payload index** (0 = first byte after the
 6-byte header) *and* frame index; prose elsewhere says which one it means. Frame index =
@@ -52,7 +54,9 @@ Direction byte: `0x90` status, `0x10` control/cascade.
 
 ## 3. Schedule (measured)
 
-Cycle period 998.6 ms mean (991.7–1007.9, σ 7.9 ms). Six frames per cycle, fixed order:
+Cycle period 998.6 ms mean (991.7–1007.9, σ 7.9 ms). **Seven** frames per cycle, fixed order
+(the seventh, `50→52`, was missed until 2026-10-28 because the capture script's parser
+rejected its sys_type; see §4.6):
 
 Offsets are measured from the start of the cycle's `0x41` frame (re-measured 2026-10-28 from
 the timestamps in all three captures; an earlier version of this table gave gaps between
@@ -64,6 +68,7 @@ frames instead of offsets for the master frames). Timestamps are quantised to 16
 | 0 ms | 50→51 / 10 | 34 | `41` | master → slave (§4.4) |
 | 48–64 ms, 64 | 51→50 / 90 | 34 | `42` | slave water |
 | 48–128 ms, 112 | 51→0F / 90 | 42 | `45` | slave gas (the early ones are cycles where it replaces the water frame) |
+| 192–224 ms, 208 | 50→52 / 10 | 3 | `40` | master → `0x52`, **sys_type `0x13`** (§4.6). Timed from the first live raw log (`raw/navien_20261028T20Z`, 150 cycles) |
 | 384–416 ms, 400 | 50→50 / 90 | 34 | `42` | master water |
 | 592–624 ms, 592 | 50→0F / 90 | 42 | `45` | master gas |
 | 784–816 ms, 800 | 50→50 / 10 | 34 | `44` | master (§4.5) |
@@ -80,74 +85,110 @@ Notation for the tables: `const XX` = identical in every frame of the capture; `
 
 ### 4.1 Water frame — `src unit → dst 0x50`, dir 0x90, len 34, type `0x42`
 
+"upstream" = htumanyan/navien `WATER_DATA` struct (§9), whose field names are frame indices.
+"upstream cascade vectors" = the two 240A2 slave water frames in its `src/checksum.cpp`.
+
 | payload | frame | master | slave | meaning |
 |---|---|---|---|---|
 | 0 | 6 | `42` | `42` | packet type |
-| 1 | 7 | `00` | `20` | **role marker** (differs master/slave) |
-| 2 | 8 | `00`/`20` | `00` | flags: `0x20` consumption (set exactly while flow > 0); `0x08` recirc running (*community*, not seen) |
-| 3 | 9 | `25` | `25` (once `35`) | power: low nibble 5 = on (*community*, consistent); high nibble unknown |
-| 4 | 10 | VAR | `14` | **burner stage** — see §5 |
+| 1 | 7 | `00` | `20` | **role marker** (differs master/slave; upstream cascade vectors also show `20` on the slave) |
+| 2 | 8 | `00`/`20` | `00` | **heating mode** (upstream enum, not a bit field): `00` idle, `08` DHW recirculating, `10` space heating, `20` DHW demand, `40` indirect tank. Measured: `20` only while flow > 0, but 5 frames with 0.4–1.3 L/min (short blips, onset) still read `00` — a flow threshold, not "any flow" |
+| 3 | 9 | `25` | `25` (once `35`) | **system power** (upstream): bit `0x01` = power on; bit `0x20` set when *no* HotButton is fitted (`25`/`05` on, `20`/`00` off). `0x10` (slave, once) unknown |
+| 4 | 10 | VAR | `14` | **operating state / burner stage** — see §5 |
 | 5 | 11 | `67` | `67` | DHW setpoint °C×2 → 51.5 °C (≈125 °F display) |
 | 6 | 12 | VAR 44–53.5 °C | 40.5/41 °C | outlet temp °C×2 |
 | 7 | 13 | VAR 29.5–42 °C | 40.5 °C | inlet temp °C×2 |
-| 8–10 | 14–16 | `00` | `00` | |
-| 11 | 17 | VAR 0–24 | `00` | **operating capacity, %×2** — see §5 |
-| 12 | 18 | VAR 0–48 | `00` | flow L/min×10 |
+| 8–9 | 14–15 | `00 00` | `00 00` | **error code**, 16-bit LE (upstream, PR #58). 0 = no error. Not yet seen non-zero here |
+| 10 | 16 | `00` | `00` | **error level** (upstream) |
+| 11 | 17 | VAR 0–24 | `00` | **operating capacity, %×2** — see §5 (upstream agrees) |
+| 12 | 18 | VAR 0–48 | `00` | flow L/min×10 (upstream agrees) |
 | 13 | 19 | `00` | `00` | |
-| 14–15 | 20–21 | `A0 BE` | `A0 BE` | unknown constant (single-unit example shows `88 C2` here) |
+| 14–15 | 20–21 | `A0 BE` | `A0 BE` | unknown constant. Same on the upstream 240A2 cascade; `88 C2` on single NPE, `58 B1` on NCB-H → probably a model/rating code |
 | 16 | 22 | `00` | `00` | |
-| 17 | 23 | `20` | `20` | unknown |
-| 18 | 24 | `02` | `02` | status bits: `0x08` metric display (clear → imperial, matches display); `0x02` = recirc mode bit (*community*) |
-| 19 | 25 | `00` | `00`/`04` | **toggling bit** on slave, ~13 s period, in lockstep with `0x41`[19] (§4.4) |
-| 20 | 26 | `01` | `00` | unknown (differs master/slave) |
-| 21 | 27 | `00`/`01` | `00` | **flame on** — 1 exactly while stage = `0x33` |
-| 22–23 | 28–29 | `00` | `00` | |
-| 24 | 30 | `02` | `03` | **role/index marker** (differs master/slave) |
-| 25–26 | 31–32 | `00` | `00` | |
-| 27 | 33 | `02` | `02` | bit `0x02` = recirculation enabled (*community*) |
+| 17 | 23 | `20` | `20` | unknown (`20` on all 240A/A2 examples, `89` NCB-H) |
+| 18 | 24 | `02` | `02` | **system status** bits (upstream): `0x08` display °C (clear → °F, matches our display); `0x01` recirc *internal* scheduled; `0x02` recirc *external* scheduled (i.e. schedule ceded to a NaviLink-type controller). Neither set → recirc off or HotButton mode |
+| 19 | 25 | `00` | `00`/`04` | **toggling bit** on slave, ~13 s period, in lockstep with `0x41`[19] (§4.4). Upstream: unknown; reads `0C` on their 240A2 slave |
+| 20 | 26 | `01` | `00` | unknown. Upstream cascade vectors: `00` and `01` on the *same* slave, so **not** a role marker |
+| 21 | 27 | `00`/`01` | `00` | **flame on** — 1 exactly while stage = `0x33`. Upstream: `boiler_active`, bit `0x01` |
+| 22–23 | 28–29 | `00 00` | `00 00` | upstream: "counter A" 16-bit LE, meaning unknown (`06`, `04` on their slave) |
+| 24–25 | 30–31 | `02 00` | `03 00` | upstream: "counter B" 16-bit LE, meaning unknown (`12`, `0A` on their slave). **Not a role marker** — the earlier reading here was an artefact of short captures |
+| 26 | 32 | `00` | `00` | |
+| 27 | 33 | `02` | `02` | **recirculation flags** (upstream): `0x01` HotButton recirc triggered/active; `0x02` scheduled recirc enabled |
 | 28–33 | 34–39 | `00` | `00` | |
 
-Community fields not yet located here: `operation_time` (hi/lo), `system_active`.
+Upstream derives *recirc running* on NPE units as `heating_mode == 0x08` **or**
+`[33] & 0x01`, and *recirc mode* from `[24]` bits 0/1 plus gas `[21]` bit 2.
 
 ### 4.2 Gas frame — `src unit → dst 0x0F`, dir 0x90, len 42, type `0x45`
 
-| payload | frame | master | slave | meaning |
-|---|---|---|---|---|
-| 0 | 6 | `45` | `45` | packet type |
-| 1 | 7 | `00` | `00` | |
-| 2–6 | 8–12 | `0C 02 0C 07 1B` | same | probably controller/panel version bytes (*community* puts versions at the start) — check against display info menu |
-| 7 | 13 | `00` | `00` | |
-| 8 | 14 | `67` | `67` | setpoint °C×2 |
-| 9 | 15 | VAR | `51`/`52` | outlet °C×2 (often ±0.5 °C from the water-frame value) |
-| 10 | 16 | VAR | `53` | inlet °C×2 |
-| 11–13 | 17–19 | `00` | `00` | |
-| 14 | 20 | VAR 0–0x5E | `00` | **coarse burner power** ≈ kcal ÷ 256; reads 0 during stages 2C/2D (ignition) and lags the kcal field |
-| 15 | 21 | `01` | `01` | |
-| 16–17 | 22–23 | VAR | `00 00` | **current gas use, kcal/h, little-endian**: 12 075 fixed during ignition, 23 647 peak on light-off, modulating 6 500–8 300 in steady combustion |
-| 18 | 24 | `1E` | `32` | *community*: lifetime gas ×0.1 m³. Reads 3.0 / 5.0 m³ — too low to be lifetime; **treat as unverified** |
-| 19–21 | 25–27 | `00` | `00` | (if [18] is 32-bit LE, these are its upper bytes) |
-| 22 | 28 | `01` | `01` | |
-| 23 | 29 | `00` | `00` | |
-| 24 | 30 | `04` | `04` | |
-| 25–35 | 31–41 | `00` | `00` | |
-| 36–37 | 42–43 | `AA 48` | `AA 48` | unknown constant, same on both units |
-| 38–39 | 44–45 | `00` | `00` | |
-| 40 | 46 | `01` | `00` | **role marker** |
-| 41 | 47 | `00` | `00` | |
+Field names from upstream `GAS_DATA`; the third upstream column is their 240A2 cascade slave
+gas vector (`TEST_VEC_240A2_SRC_51_3`), which is the closest available comparison.
 
-Community fields not located here: cumulative water usage, total operating time, days since
-install, DHW use count. Candidates: the zero runs at 25–35, or [18..21] if it is not gas.
+| payload | frame | master | slave | upstream 240A2 slave | meaning |
+|---|---|---|---|---|---|
+| 0 | 6 | `45` | `45` | `45` | packet type |
+| 1 | 7 | `00` | `00` | `00` | |
+| 2 | 8 | `0C` | `0C` | `0C` | **device type** (upstream enum): `0x0C` = 12 = **CAS_NPE2** (cascaded NPE-A2) |
+| 3 | 9 | `02` | `02` | `02` | unknown (`01` on NCB-H) |
+| 4 | 10 | `0C` | `0C` | `0C` | **controller version**, decimal digits → "1.2" |
+| 5 | 11 | `07` | `07` | `07` | unknown |
+| 6 | 12 | `1B` | `1B` | `1B` | **panel version**, decimal digits → "2.7" |
+| 7 | 13 | `00` | `00` | `00` | space-heat setpoint °C×2 (combi only) |
+| 8 | 14 | `67` | `67` | `5C` | DHW setpoint °C×2 |
+| 9 | 15 | VAR | `51`/`52` | `5B` | outlet °C×2 (often ±0.5 °C from the water-frame value) |
+| 10 | 16 | VAR | `53` | `44` | inlet °C×2 |
+| 11 | 17 | `00` | `00` | `00` | SH outlet °C×2 (combi only) |
+| 12 | 18 | `00` | `00` | `00` | SH return °C×2 (combi only) |
+| 13 | 19 | `00` | `00` | `00` | outdoor temp, sign-magnitude whole °C; upstream says `9E` = no probe. **Reads `00` here and on the upstream 240A2** — treat `00` as "no probe" on this model |
+| 14 | 20 | VAR 0–0x5E | `00` | `00` | **heat capacity, %×2** (upstream). Verified here: `[20]/2` = current gas ÷ 504 (i.e. % of the 50 400 kcal/h rating) within −0.6…+0.1 points over 61 frames. Reads 0 during ignition (stages 2C/2D) |
+| 15 | 21 | `01` | `01` | `01` | **system status 2** (upstream): bit `0x01` display °F (consistent with water[24] `0x08` clear); bit `0x04` HotButton mode enabled (clear here) |
+| 16–17 | 22–23 | VAR | `00 00` | `00 00` | **current gas use, kcal/h, 16-bit LE**. See note below on the upstream ×10 claim |
+| 18–19 | 24–25 | `1E 00` | `32 00` | `30 00` | **cumulative gas**, 16-bit LE, ×0.1 m³ (upstream) → 3.0 / 5.0 m³ |
+| 20–21 | 26–27 | `00 00` | `00 00` | `00 00` | unknown |
+| 22–23 | 28–29 | `01 00` | `01 00` | `08 00` | **days since install** (upstream) → 1 |
+| 24–25 | 30–31 | `04 00` | `04 00` | `16 00` | **DHW use count** (upstream; "in 10-use increments" per a comment, the decoder publishes it raw) |
+| 26 | 32 | `00` | `00` | `7D` | unknown |
+| 27–28 | 33–34 | `00 00` | `00 00` | `2F 00` | upstream: "counter C", unknown |
+| 29 | 35 | `00` | `00` | `00` | |
+| 30–31 | 36–37 | `00 00` | `00 00` | `04 00` | **total operating time, hours** (upstream) |
+| 32–33 | 38–39 | `00 00` | `00 00` | `00 00` | **cumulative DHW usage hours** (upstream) |
+| 34–35 | 40–41 | `00 00` | `00 00` | `00 00` | cumulative SH usage hours (combi only) |
+| 36–37 | 42–43 | `AA 48` | `AA 48` | `AA 48` | unknown constant; identical on the upstream 240A2, `A6 49` single NPE, `78 3C` NCB-H |
+| 38–39 | 44–45 | `00` | `00` | `00` | |
+| 40 | 46 | `01` | `00` | `00` | **role marker** (upstream: `01` on single NPE, `00` NCB-H — i.e. "1 = master/standalone") |
+| 41 | 47 | `00` | `00` | `00` | |
+
+**Counters [24..37] are suspiciously small** on both installations (here: 1 day, 3–5 m³,
+0 operating hours). Either both cascades are newly installed, or these counters mean
+something else on CAS_NPE2. Compare with the installer-menu values (open question 3).
+
+**Current-gas scale disagreement.** Upstream's YAML says the raw value is "10× kcal/h" and
+multiplies by 10 for its kW sensor. Our data contradicts that for this model: raw values
+peak at 23 647 on light-off, which is 47 % of the 50 400 kcal/h (199 900 BTU/h) rating —
+exactly what gas[20] reports (`0x5E`/2 = 47 %). ×10 would be 4.7× the rated input. We keep
+**raw = kcal/h**.
 
 ### 4.3 Checksum/role summary
 
-Three bytes distinguish master from slave in the status frames: water[1] (`00`/`20`),
-water[24] (`02`/`03`), gas[40] (`01`/`00`). None of them is simply the unit index.
+Two bytes reliably distinguish master from slave in the status frames: water[7] (`00`/`20`)
+and gas[46] (`01`/`00`). Water[26] and water[30] were listed here before; upstream cascade
+vectors show both varying on a slave, so they are not role markers. Use the source address
+(`0x50` + index) to identify the unit.
 
 ### 4.4 Master → slave frame — `50→51`, dir 0x10, len 34, type `0x41` (measured)
 
 The ESPHome project (PR #65) treats frames with this shape as the master relaying the
 *sub-unit's* data. On this installation the content is the **master's own state from the
-previous cycle**, apparently pushed to the slave for cascade coordination:
+previous cycle**, apparently pushed to the slave for cascade coordination.
+
+Upstream's current code ignores every dir-0x10 frame not from `0x0F` (commit `0add04d`
+"…observed in cascade setup for 240A2 between navien units"), so it decodes none of this.
+Its `checksum.cpp` does contain one such frame from another 240A2 cascade
+(`TEST_VEC_240BE_SRC_51`, labelled seed `0x62` with a "TODO: verify"). Recomputing it: the
+stored checksum `BE` matches seed **`0x4B`**, not `0x62` — consistent with our seed-by-source
+rule. That frame has the same layout as ours: `[9]=01` idle, `[20]=01`, `[29..37]` =
+`0A 0E 00 06 02 00 00 00 C2` identical, `[25]=0C`, and A/B/C = 67/32/107, so **C = A + 40
+holds on a second installation**.
 
 | payload | frame | value | meaning |
 |---|---|---|---|
@@ -192,11 +233,24 @@ threshold crossing in A or C in the cycle before the slave's stage leaves `0x14`
 Payload constant: `44 00 14 1E 0A 00 00 … 00`. Values 20, 30, 10. Possibly cascade or
 timing configuration (e.g. seconds), possibly a poll slot for an absent device. Unknown.
 
+### 4.6 Master → `0x52` frame, sys_type `0x13` (measured, found 2026-10-28)
+
+`F7 13 50 52 10 03 40 00 04 A6` — byte-identical once per cycle in all three captures and
+the live log. Checksum `A6` validates with seed `0x4B` (src `0x50`), so it is a real frame,
+not noise. `navien-capture.py` (and upstream, whose firmware-derived check requires
+sys_type 1..9) discard it, which is why the capture summaries showed 2 "resyncs" per cycle
+and only six streams. `navien/protocol.py` accepts any sys_type.
+
+It sits right after the slave's gas frame, in the slot where a unit 2 would answer.
+Hypothesis: the master polls the next cascade address (`0x52`) to discover added units,
+using a different sys_type for that discovery traffic. Nobody answers here. Payload
+`40 00 04`: type `0x40`, meaning of `00 04` unknown.
+
 ## 5. Burn cycle as observed (master, one tap ≈ 4.3 L/min)
 
 Cycle-by-cycle from the capture (times are seconds into the capture):
 
-| t | stage | flame | cap % | kcal/h | coarse | notes |
+| t | stage | flame | cap % | kcal/h | gas[20] | notes |
 |---|---|---|---|---|---|---|
 | 0–10 | `14` standby | 0 | 0 | 0 | 0 | brief 0.4–0.5 L/min blips at 3 s and 8 s, capacity 1–2 % |
 | 11 | `14` | 0 | 4 | 0 | 0 | flow 3.1 L/min, consumption flag set |
@@ -211,10 +265,29 @@ Cycle-by-cycle from the capture (times are seconds into the capture):
 | 41–42 | `2C` | 0 | 8 | 12 024 | 0 | |
 | 43–59 | `33` | **1** | 8 → 12 | 13 382 → 6 590 | tracks | inlet falls to 29.5 °C, capacity rises to 12 % |
 
-Stage values match the NavienManager enumeration (dacarson) exactly:
-`0x14` standby, `0x20` demand, `0x29` pre-purge, `0x2B` ignition, `0x2C` flame on,
-`0x2D` ramp-up, `0x33` active combustion, `0x34` water adjustment, `0x3C` flame off,
-`0x46`/`0x47` post-purge 1/2, `0x49` DHW wait. `0x2B`, `0x34`, `0x47`, `0x49` not seen yet.
+Stage enumeration. Upstream (`OPERATING_STATE`, from ificator/navien_ha) is a superset of
+the NavienManager list this note was first written from, and **disagrees on `0x20`**:
+
+| code | upstream name | earlier name here | seen here |
+|---|---|---|---|
+| `14` | standby | standby | yes |
+| `15` | demand | — | no |
+| `20` | **startup** | demand | yes (1 cycle, right after flow starts) |
+| `28` | pre-purge 1 | — | no |
+| `29` | pre-purge 2 | pre-purge | yes |
+| `2A` | pre-ignition | — | no |
+| `2B` | ignition | ignition | no |
+| `2C` | flame on | flame on | yes |
+| `2D` | ramp up | ramp-up | yes |
+| `33` | active combustion | active combustion | yes |
+| `34` | water adjustment valve operation | water adjustment | no |
+| `3C` | flame off | flame off | yes |
+| `46` | post-purge 1 | post-purge 1 | yes |
+| `47` | post-purge 2 | post-purge 2 | no |
+| `48` | shutting down | — | no |
+| `49` | DHW wait / set-point match | DHW wait | no |
+
+Use the upstream names; `0x20` → "startup" fits what we see (first cycle after flow begins).
 
 Capacity sanity check: 4.2 L/min × ΔT 9.5 K ≈ 2 400 kcal/h delivered to water ≈ 5 % of the
 unit's 50 400 kcal/h (199 900 BTU/h) rating, vs. 5.5 % reported — consistent with %×2
@@ -227,27 +300,51 @@ The slave never left `0x14` and reported 0 kcal throughout.
 1. `0x41`[20..22] (A/B/C) — likely the cascade hand-off logic. Needs a slave-firing capture.
 2. The `0x04` toggling bit (slave water[19] / `0x41`[19]) — ~13 s period, not stage-linked.
    Recirc pump? Heartbeat? Capture a recirculation event and a long idle period.
-3. Gas[18] — lifetime gas or something else? Compare with the installer menu. Also find
-   where cumulative water, operating hours and DHW-use count live (all zero-ish runs are
-   candidates; a long capture may show one of them tick).
-4. Gas[2..6] version bytes vs. the display's version screen.
+3. Gas counters (frame [24..37]: cumulative gas, days since install, DHW use count,
+   operating hours) — upstream gives a full map, but values here are tiny (1 day, 3–5 m³,
+   0 h). When were the units installed? Compare with the installer-menu / info screens, and
+   watch whether "days since install" ticks over at midnight in a long capture.
+4. Version bytes: gas[10] = `0C` → controller "1.2", gas[12] = `1B` → panel "2.7" per
+   upstream. Confirm against the display's version screen.
 5. Slave's duplicate-gas / missing-water cycles — pattern or noise?
 6. The `0x44` frame — does it ever change (power cycle, installer-menu change, error)?
-7. Error codes — nowhere decoded in the community either. A deliberate error (e.g. closing
-   the gas valve briefly to induce an ignition failure) would reveal them, if the user is
-   willing.
-8. Water[14..15] `A0 BE` and gas[36..37] `AA 48` constants — model/rating codes? Temperature limits?
+7. Error codes — upstream now decodes water[14..15] (code, LE) and [16] (level). Not yet seen
+   non-zero here. Verify the next time a unit shows an error on its display; a deliberate
+   error (e.g. briefly closing the gas valve) only if the user is willing.
+8. Water[20..21] `A0 BE` and gas[42..43] `AA 48` — identical on the upstream 240A2 cascade,
+   different on other models, so probably model/rating codes.
+9. Water[28..31] "counters A/B" — meaning unknown upstream too. Ours read `00 00` / `02 00`
+   (master) and `00 00` / `03 00` (slave); a long capture may show them change.
+10. Gas[19] outdoor temp reads `00`, not upstream's `9E` "no probe" value. Probably model-specific.
+11. The sys_type `0x13` `50→52` frame (§4.6) — discovery poll? Does its payload change when
+    the slave is powered off, or at master power-up?
 
 ## 7. Writing to the bus (*community*, untested here)
 
-Control frames: `F7 sys dst=0x50 src=0x0F dir=0x10 len=0x0C 4F … cs`, seed `0x62`.
-Known fields (frame index): `[8]` power `0x0A` on / `0x0B` off; `[9]` DHW setpoint °C×2;
-`[10]` SH setpoint (combi only); `[12]` token echoed in the ack; recirculation/HotButton flags
-later in the payload (HotButton = "on" twice then "off"). NaviLink repeats each command ~6×.
-Heater needs NaviLink enabled in the installer menu and sends a periodic "NaviLink present"
-announce: `F7 sys 0F 50 10 03 4A 00 01 cs`. On the original NPE-240A power/setpoint commands
-are ignored; on the NPE-240A2 they are reported to work (htumanyan/navien issue #97).
-Transmit only after ≥20 ms of bus silence (PR #82); the ~150 ms gaps in §3 are the slots.
+Control frames: `F7 sys src=0x0F dst=0x50 dir=0x10 len=0x0C 4F … cs`, seed `0x62`
+(header order is src then dst). Upstream hard-codes sys `0x05` in its command templates; we
+must use `0x02`. Fields (frame index), all others `00`:
+
+| byte | meaning (upstream `navien_proto.h` / `navien_link.cpp`) |
+|---|---|
+| `[8]` | power: `0A` on, `0B` off, `00` no change |
+| `[9]` | DHW setpoint °C×2 (`round(t*2)`), `00` = no change |
+| `[10]` | SH setpoint °C×2 (combi only; verified on NCB-H), `00` = no change |
+| `[11]` | recirculation: `01` HotButton press (followed by one frame with `00` = release), `08` scheduled-recirc on, `10` scheduled-recirc off |
+| `[12]` | `D9` in upstream's legacy `RECIRC_ON_CMD`, `00` in the newer scheduled-recirc commands — meaning unknown |
+
+The earlier claim here that `[12]` is a "token echoed in the ack" does **not** come from
+upstream; source unknown, treat as unverified.
+
+Upstream sending behaviour (current code): every command is queued **2×** (not ~6×), and
+one queued frame is written **immediately after each complete frame received**. When no
+command is pending it sends the NaviLink-present announce `F7 sys 0F 50 10 03 4A 00 01 cs`
+after every received frame, and stops announcing if it sees another device's announce (then
+it only transmits right after that device's announce). There is no explicit ≥20 ms
+silence wait in the current code; on our bus the master's schedule (§3) leaves ~150 ms gaps
+after each frame, so "right after a frame" and "after ≥20 ms silence" both land in a gap.
+Heater needs NaviLink enabled in the installer menu. On the original NPE-240A power/setpoint
+commands are ignored; on the NPE-240A2 they are reported to work (issue #97).
 Whether a slave can be addressed directly (`dst 0x51`) is unknown; all community
 implementations target `0x50`.
 
@@ -256,6 +353,10 @@ implementations target `0x50`.
 - htumanyan/navien — ESPHome component, protocol docs (`doc/rs485.md`, `doc/payload.md`,
   `doc/protocol_data_flow.md`), PRs #65 (cascade frames), #81 (SH setpoint), #82 (quiet-bus TX),
   #91 (sys_type), issue #97 (NPE-240A vs A2 commands). https://github.com/htumanyan/navien
+  **Audited 2026-10-28 at commit `b49bdfc` (2026-10-22)** — see §9. Most useful files:
+  `esphome/components/navien/navien_proto.h` (field structs, frame-index names),
+  `navien.cpp` (scaling, enums), `navien_link.cpp` (checksum seed choice, TX behaviour),
+  `src/checksum.cpp` (test vectors, including four from a 240A2 cascade).
 - dacarson/NavienManager — ESP32 HomeKit; `Navien.cpp` has the most complete field list and
   the stage enumeration. https://github.com/dacarson/NavienManager
 - evanjarrett/ESPHome-Navien — original byte-offset decoding of water/gas/control packets.
@@ -263,3 +364,42 @@ implementations target `0x50`.
 - Home Assistant thread "Navien, ESP32 Navilink interface":
   https://community.home-assistant.io/t/navien-esp32-navilink-interface/720567
 - Waveshare USB TO RS485 (C): https://docs.waveshare.com/USB_TO_RS485_C
+
+## 9. Audit against htumanyan/navien (2026-10-28, commit `b49bdfc`)
+
+Consistent with our findings:
+- 19200 8N1, `F7` marker, `len` = payload length, checksum algorithm.
+- Seed selection: upstream picks `0x4B` iff `src == 0x50`, else `0x62` — the same
+  seed-by-source rule (so the slave's `0x62` seed is *not* a disagreement with upstream).
+- sys_type `0x02`: upstream's own 240A2 cascade test vectors also carry `0x02`. Its docs
+  still say "always 0x05" and its command templates hard-code `0x05`.
+- Cascade addressing: units are `0x50 + index`; upstream filters status frames by source.
+- Water [11]–[13], [17], [18] scales; gas [14]–[16], [22..23] positions; water [24] `0x08`
+  display-units bit; water [33] recirc bits; water [27] flame.
+- Version bytes `0C 02 0C 07 1B`, water `A0 BE`, gas `AA 48` and the whole `0x41` layout are
+  byte-identical on upstream's 240A2 cascade vectors.
+
+New from upstream (folded into §4/§5/§7 above):
+- Water [8] is a heating-mode enum; [9] power bit 0 + "no HotButton" bit 5; [14..16] error
+  code/level; [24] recirc-schedule bits; [28..31] two unknown counters.
+- Gas [8] device type (`0C` = CAS_NPE2), [10]/[12] controller/panel versions, [13], [17..19]
+  combi/outdoor temps, [20] heat capacity %×2, [21] system status 2, [24..41] counters.
+- Stage enum has more states, and names `0x20` "startup", not "demand".
+- Command byte [11] values for HotButton and scheduled recirculation.
+
+Corrections to our own notes:
+- Water [26] and [30] are not role markers (they vary on upstream's slave).
+- Gas [20] is heat capacity %×2, not "kcal ÷ 256" (that was a coincidence of scale).
+- Gas [24] cumulative gas is 16-bit LE `[24..25]`, not a possible 32-bit at `[24..27]`.
+
+Where we disagree with upstream, and keep our reading:
+- Current gas `[22..23]` is kcal/h on the NPE-240A2, not 10× kcal/h (§4.2 note).
+- Upstream labels its `50→51` cascade test vector as seed `0x62`; its checksum actually
+  matches `0x4B` (§4.4).
+- Upstream says inter-unit dir-0x10 frames "have some other checksum algorithm"; they use
+  the normal algorithm with the source's seed (all 120 such frames per capture validate).
+
+Not covered by upstream at all: the `0x41` and `0x44` frame contents, the sys_type `0x13`
+`50→52` frame (upstream's sys_type 1..9 check would drop it), the bus schedule
+(upstream describes the bus as unscheduled full duplex, which is not true on a cascade),
+and the slave duplicate-gas cycles.

@@ -1,2 +1,7 @@
-captures
-venv
+captures/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+raw/
+navien.toml

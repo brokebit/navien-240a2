@@ -117,6 +117,13 @@ the FTDI default `latency_timer`. The udev rule sets it to 1 ms.
 - `decode.py` keeps field definitions as data: name, frame index (or index range), scale,
   unit, kind, and a `confidence` tag (`measured` / `community` / `unknown`). The debug view
   and the docs both use this table, so "what we know" lives in one place.
+- Field coverage follows `PROTOCOL_NOTES.md` §4 after the htumanyan/navien audit (§9 there):
+  heating mode, operating state (upstream stage names, `0x20` = startup), error code/level,
+  device type, controller/panel versions, heat capacity, display units, recirculation flags,
+  and the gas-frame counters (tagged `unverified` until checked against the installer menu).
+  Current gas is kcal/h (not upstream's ×10).
+- Unknown bytes are not decoded into named fields; they stay visible in the debug view and
+  `/api/frames`. The `0x41` bytes `[26..28]` are the exception (exposed as `x26..x28`).
 - Frames with a bad checksum are counted and shown in the debug stream but **never
   update state**.
 - **Cycle coalescing:** the master's `0x41` frame (t = 0 of every cycle) closes the previous
@@ -129,10 +136,14 @@ the FTDI default `latency_timer`. The udev rule sets it to 1 ms.
   ```json
   {"type": "cycle", "ts": 1793197830.012, "seq": 4711,
    "units": {
-     "0": {"role": "master", "stage": "combustion", "stage_code": 51, "flame": true,
-           "set_c": 51.5, "outlet_c": 49.0, "inlet_c": 31.5, "flow_lpm": 4.3,
-           "capacity_pct": 5.5, "gas_kcalh": 6640, "consumption": true,
-           "recirc_enabled": true, "recirc_running": false, "power_on": true,
+     "0": {"role": "master", "stage": "active_combustion", "stage_code": 51, "flame": true,
+           "heating_mode": "dhw_demand", "set_c": 51.5, "outlet_c": 49.0, "inlet_c": 31.5,
+           "flow_lpm": 4.3, "capacity_pct": 5.5, "heat_capacity_pct": 13.0, "gas_kcalh": 6640,
+           "error_code": 0, "error_level": 0, "power_on": true,
+           "recirc_running": false, "recirc_scheduled_enabled": true, "display_f": true,
+           "device_type": "CAS_NPE2", "controller_version": "1.2", "panel_version": "2.7",
+           "counters": {"gas_m3": 3.0, "days_since_install": 1, "dhw_uses": 4,
+                        "operating_hours": 0},
            "age_s": {"water": 0.6, "gas": 0.4}},
      "1": {"role": "slave", "...": "..."}},
    "cascade": {"demand": true, "flame": true, "x26": 93, "x27": 42, "x28": 133, "toggle_25": false},
@@ -146,10 +157,11 @@ the FTDI default `latency_timer`. The udev rule sets it to 1 ms.
 
 ### 1.5 Raw logging
 
-- Always on. Writes every received byte, unmodified, to `raw/navien_YYYYMMDD_HH.raw`
-  (hourly rotation, local time). A sidecar `.idx` records `(byte_offset, ts)` per read chunk,
-  so timing survives without changing the `.raw` format the capture script and ReplaySource
-  understand.
+- Always on. Writes every received byte, unmodified, to `raw/navien_YYYYMMDDTHHZ.raw`
+  (hourly rotation, **UTC** so a DST change never repeats an hour). A sidecar `.idx` records
+  `(byte_offset, ts)` at the start of each burst (a chunk ≥ 5 ms after the previous one, i.e.
+  every frame start), so timing survives without changing the `.raw` format the capture
+  script and ReplaySource understand.
 - Closed files are gzip-compressed in the background (~23 MB/day uncompressed).
 - Retention by **both** age and total size (defaults: 60 days, 2 GB), oldest deleted first.
 - Writes are buffered and flushed every few seconds (SD-card friendly); fsync on rotation and
@@ -215,7 +227,7 @@ CLI flags override (`--replay`, `--speed`, `--port`, `--http-port`, `--headless`
 - Plain HTML + CSS + JS modules, **no build step**, all assets served by the Pi
   (no CDN), responsive down to phone width, light/dark following the OS.
 - **Household view:** one card per unit (stage, flame, outlet/inlet/setpoint, flow,
-  capacity, gas rate, recirculation), a cascade strip (demand, which units are firing),
+  capacity, gas rate, recirculation, error code highlighted when non-zero), a cascade strip (demand, which units are firing),
   a status bar (connected, bus alive, last update age, checksum errors).
 - **Debug view** (toggle, remembered): per-stream hex rows with bytes that changed in the
   last N cycles highlighted, decoded-field overlay from `/api/fields`, unknown bytes
@@ -340,3 +352,10 @@ an offline analyzer tool.
 ## 4. Changelog
 
 - 2026-10-28 — draft written after review Q&A.
+- 2026-10-28 — field coverage updated after the htumanyan/navien audit; plan approved, Phase 0 started.
+- 2026-10-28 — Phase 0 implemented: `navien/{protocol,decode,state,config,source,rawlog,__main__}.py`,
+  35 tests passing, ~3 min live headless run (0 checksum failures, 0 resyncs, clean SIGTERM
+  shutdown). Changes from the plan: raw-log periods are UTC; `.idx` marks bursts, not every
+  read (it was 2.5× the raw size); the parser accepts any sys_type, which exposed a seventh
+  frame per cycle (`50→52`, sys_type `0x13`, PROTOCOL_NOTES §4.6). Outstanding for "done":
+  install the udev rule (sudo) and a 1 h live run.
