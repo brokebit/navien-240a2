@@ -88,7 +88,8 @@ over one minute as inlet temp fell — **unknown, probably cascade load/demand; 
 - `PLAN.md` — dashboard service architecture, decisions, phased development plan.
 - `navien/` — the service package. Phase 0: protocol, decode, state, rawlog, source.
   Phase 1: `service.py` (wiring, reader thread → event loop), `hub.py` (fan-out),
-  `api.py` (FastAPI REST, OpenAPI at `/docs`).
+  `api.py` (FastAPI REST, OpenAPI at `/docs`). Phase 2: `ws.py` (`/ws` push protocol,
+  documented in its docstring).
   `venv/bin/python -m navien` serves http://<pi>:8000 from the live bus (config `./navien.toml`,
   gitignored; copy of `navien.example.toml`). `--headless` prints cycles instead;
   `--replay <file.raw[.gz]> [--speed 0|N] [--loop]` replaces the serial port (no raw logging).

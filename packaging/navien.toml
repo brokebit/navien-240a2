@@ -6,9 +6,11 @@
 port = "/dev/navien"          # udev symlink from /usr/lib/udev/rules.d/99-navien-dash.rules
 baud = 19200
 
-[http]                        # Phase 1
+[http]
 host = "0.0.0.0"
 port = 8000
+ws_queue = 256                # WebSocket: per-client queue before oldest messages drop
+ws_send_timeout_s = 30.0      # WebSocket: drop a client that accepts nothing this long
 
 [state]
 history_seconds = 300         # in-memory history window for the dashboard

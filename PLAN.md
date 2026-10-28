@@ -186,15 +186,26 @@ the FTDI default `latency_timer`. The udev rule sets it to 1 ms.
 | `WS /ws` | Push channel (below) |
 | `GET /docs` | FastAPI's generated OpenAPI docs, for future API clients |
 
-WebSocket protocol (JSON text messages):
+WebSocket protocol (JSON text messages; implemented in `navien/ws.py`, whose docstring is
+the reference):
 
-- On connect the server sends `{"type":"hello", "config":{history_seconds,…}}`, then
-  `{"type":"history", "cycles":[…]}` so charts fill immediately, then `cycle` messages at 1 Hz.
-- The client may send `{"subscribe":["frames"]}` to also receive every raw frame
-  (`{"type":"frame",…}`); only the debug view does this, so normal clients stay light.
-- Per-client queue bounded (e.g. 120 messages); on overflow the oldest is dropped and the
-  client gets a `{"type":"gap"}` marker so it can re-request history.
-- Clients reconnect with exponential backoff and re-sync from `history`.
+| direction | message | when |
+|---|---|---|
+| → client | `{"type":"hello","api_version","source","history_seconds","topics"}` | once, on connect |
+| → client | `{"type":"history","seconds","cycles":[…]}` | on connect, and on request |
+| → client | `{"type":"cycle",…}` (same shape as `GET /api/state`) | every bus cycle |
+| → client | `{"type":"frame",…}` (same shape as `/api/frames` items) | every frame, if subscribed |
+| → client | `{"type":"gap","dropped":n}` | before the next message after a drop |
+| → client | `{"type":"error","message"}` | unparseable / unknown client message |
+| → server | `{"subscribe":["frames"]}`, `{"unsubscribe":["frames"]}` | debug view only |
+| → server | `{"get":"history","seconds":N}` | after a gap, to re-sync |
+
+- Per client: one Hub subscription (`http.ws_queue`, default 256 messages ≈ 4 min of cycles
+  or ~35 s with frames) with drop-oldest, a writer task (the only sender) and a reader task.
+- Dead or stalled clients: uvicorn's keepalive ping (20 s interval, 20 s timeout) closes
+  them, measured at ~40 s; an app-level send timeout (`http.ws_send_timeout_s`, 30 s) is
+  the second line of defence.
+- Clients reconnect with exponential backoff and re-sync from the `history` message.
 
 ### 1.7 Where TX would go (not built)
 
@@ -400,3 +411,7 @@ an offline analyzer tool.
   opened with an exclusive lock, so a dev run cannot silently share the port with the
   installed service (two readers split the byte stream). Dev runs use `--replay` or ask
   the user to stop the service first.
+- 2026-10-28 — Phase 2 implemented: `navien/ws.py` + `/ws` route, `http.ws_queue` and
+  `http.ws_send_timeout_s` config. Protocol as in §1.6 (adds `unsubscribe`, `get history`,
+  `error`). 51 tests. Soak on replay at 10× for 7 min: 5 clients × 4 129 cycles, 0 missing,
+  0 gaps; one also took 28 919 frames; a stalled client was closed by uvicorn's ping after ~40 s.

@@ -6,14 +6,14 @@ touches the state model (see service.py).
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, WebSocket
 
 from .decode import fields_table
 from .service import Service
-
-API_VERSION = "1"
+from .ws import API_VERSION, WsSession
 
 
 def create_app(service: Service) -> FastAPI:
@@ -41,7 +41,7 @@ def create_app(service: Service) -> FastAPI:
     async def index():
         return {"name": "navien", "api_version": API_VERSION,
                 "endpoints": ["/api/state", "/api/history", "/api/frames", "/api/fields",
-                              "/api/health", "/docs"]}
+                              "/api/health", "/ws", "/docs"]}
 
     @app.get("/api/state", tags=["data"], summary="Latest completed bus cycle")
     async def state():
@@ -66,5 +66,17 @@ def create_app(service: Service) -> FastAPI:
     @app.get("/api/health", tags=["meta"], summary="Bus, reader, raw log and hub status")
     async def health():
         return service.health()
+
+    @app.websocket("/ws")
+    async def ws(websocket: WebSocket):
+        """Live push; protocol in navien/ws.py. Not listed in /docs (OpenAPI has no WebSockets)."""
+        await websocket.accept()
+        client = websocket.client
+        name = f"ws:{client.host}:{client.port}" if client else "ws"
+        await WsSession(service, websocket.send_text, websocket.receive_text, name).run()
+        try:                                     # no-op if the client already went away
+            await asyncio.wait_for(websocket.close(), 1.0)
+        except Exception:
+            pass
 
     return app

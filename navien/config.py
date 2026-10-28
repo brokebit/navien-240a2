@@ -17,6 +17,8 @@ class SerialCfg:
 class HttpCfg:
     host: str = "0.0.0.0"
     port: int = 8000
+    ws_queue: int = 256                # per-client outbound messages before drop-oldest
+    ws_send_timeout_s: float = 30.0    # a client that accepts nothing this long is dropped
 
 
 @dataclass
