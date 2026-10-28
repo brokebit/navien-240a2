@@ -39,8 +39,10 @@ class SerialSource:
 
     def open(self) -> None:
         import serial
+        # exclusive=True takes an advisory flock: a second navien process (e.g. the dev tree
+        # while the packaged service runs) fails to open instead of splitting the byte stream.
         self.ser = serial.Serial(self.port, self.baud, bytesize=8, parity="N",
-                                 stopbits=1, timeout=0.05)
+                                 stopbits=1, timeout=0.05, exclusive=True)
         self.ser.reset_input_buffer()
 
     def read(self) -> tuple[float, bytes]:

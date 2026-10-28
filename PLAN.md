@@ -396,3 +396,7 @@ an offline analyzer tool.
   moved to `packaging/`. Requirements split into `requirements.txt` (top level),
   `requirements.lock` (full pinned runtime set) and `requirements-dev.txt` (+ pytest, httpx2).
   Phase 1 "done" now means: `v0.1.0` .deb installs, service runs, survives unplug/replug.
+- 2026-10-28 — `v0.1.0` installed and verified by the user. `v0.1.1`: the serial port is
+  opened with an exclusive lock, so a dev run cannot silently share the port with the
+  installed service (two readers split the byte stream). Dev runs use `--replay` or ask
+  the user to stop the service first.

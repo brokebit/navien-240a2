@@ -90,3 +90,21 @@ def test_missing_serial_port_is_reported_not_fatal(tmp_path):
         assert h["source"] == "serial:/dev/does-not-exist"
         s = client.get("/api/state").json()
         assert s["units"] == {} and s["seq"] == 0
+
+
+def test_second_opener_of_the_port_is_refused(tmp_path):
+    # Two readers on one tty would each get part of the bytes; the flock prevents it.
+    import os
+    import serial
+    from navien.source import SerialSource
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+    first = SerialSource(path)
+    first.open()
+    try:
+        with pytest.raises(serial.SerialException):
+            SerialSource(path).open()
+    finally:
+        first.close()
+        os.close(master)
+        os.close(slave)

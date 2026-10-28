@@ -143,6 +143,13 @@ the dev tree or `navien-capture.py` against the port.
   The service keeps a rotated raw log permanently (PLAN.md §1.5).
 - Exactly one process may own the serial port, and only its reader thread touches it.
   Run the service as a single uvicorn worker.
+- **The packaged service normally owns the port.** Before any dev run against the live bus,
+  check `systemctl is-active navien-dash`; if active, ask the user to
+  `sudo systemctl stop navien-dash` (and to start it again afterwards). Prefer not needing
+  the port at all: `--replay` a log from `/var/lib/navien-dash/raw/` (readable by all), or
+  read the running service's API on :8000. Since v0.1.1 the service takes an exclusive lock
+  on the port, so a second navien process fails to open it; `navien-capture.py` takes no
+  lock and would still collide.
 - Use frame indices (0 = F7) in code and notes; say "payload index" explicitly if used.
 - Treat community decodes (single-unit NPE/NCB/NHB) as hypotheses to verify on this cascade,
   not facts. Several already differ (sys_type `0x02` vs their `0x05` templates, the current-gas
