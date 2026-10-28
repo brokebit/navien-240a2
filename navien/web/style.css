@@ -11,6 +11,7 @@
   --muted: #898781;
   --hairline: rgba(11, 11, 11, 0.10);
   --grid: #e1e0d9;
+  --axis: #c3c2b7;
   --unit-0: #2a78d6;
   --unit-1: #eb6834;
   --good: #0ca30c;
@@ -34,6 +35,7 @@
     --ink-2: #c3c2b7;
     --hairline: rgba(255, 255, 255, 0.10);
     --grid: #2c2c2a;
+    --axis: #383835;
     --unit-0: #3987e5;
     --unit-1: #d95926;
     --good-ink: #0ca30c;
@@ -198,5 +200,54 @@ button.small {
   font: inherit; font-size: 0.78rem; margin-left: 8px; padding: 2px 8px; cursor: pointer;
   border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); color: var(--ink);
 }
+
+/* ---------------------------------------------------------------- charts */
+
+.charts { margin-top: 18px; }
+.charts-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 8px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; }
+.chart-grid .wide { grid-column: 1 / -1; }
+.chart { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 4px; }
+.chart-title { margin: 0; font-size: 0.9rem; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 0.8rem; color: var(--ink-2); flex: 1; }
+.chart-table-btn { margin-left: auto; }
+.chart-table-btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.line-key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; background: var(--key); flex: none; }
+.line-key.dashed { background: repeating-linear-gradient(90deg, var(--key) 0 4px, transparent 4px 7px); }
+.box-key { display: inline-block; width: 12px; height: 10px; border-radius: 2px; flex: none;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--unit-0) var(--mix), var(--surface)) 50%,
+                              color-mix(in oklab, var(--unit-1) var(--mix), var(--surface)) 50%); }
+
+.chart-plot { position: relative; }
+.chart-plot svg { display: block; width: 100%; height: auto; touch-action: pan-y; outline: none; }
+.chart-plot svg:focus-visible { outline: 2px solid var(--unit-0); outline-offset: 2px; border-radius: 4px; }
+.chart-plot text { fill: var(--muted); font: 11px var(--font); font-variant-numeric: tabular-nums; }
+.chart-plot .axis-label { fill: var(--ink-2); }
+.chart-plot .end-labels text { fill: var(--ink-2); }
+.chart-plot .grid line { stroke: var(--grid); stroke-width: 1; }
+.chart-plot .grid line.baseline { stroke: var(--axis); }
+.chart-plot .track { stroke: var(--grid); stroke-width: 1; }
+.chart-plot path.series { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart-plot .dashed { stroke-dasharray: 5 4; }
+.chart-plot .ref-line { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart-plot .key { stroke-width: 2; stroke-linecap: round; }
+.chart-plot .crosshair { stroke: var(--ink-2); stroke-width: 1; }
+.chart-plot .dot { stroke: var(--surface); stroke-width: 2; }
+.chart-tip {
+  position: absolute; pointer-events: none; z-index: 2; min-width: 120px;
+  background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); padding: 6px 8px; font-size: 0.8rem;
+}
+.tip-time { color: var(--muted); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.tip-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tip-row strong { font-variant-numeric: tabular-nums; }
+.chart-table { max-height: 240px; overflow: auto; margin-top: 6px; }
+.chart-table table { border-collapse: collapse; width: 100%; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.chart-table th, .chart-table td { text-align: right; padding: 2px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.chart-table th:first-child, .chart-table td:first-child { text-align: left; }
+.chart-table th { position: sticky; top: 0; background: var(--surface); color: var(--ink-2); font-weight: 500; }
+.byte-chart { margin-top: 10px; }
 
 .footer { max-width: 1200px; margin: 18px auto 0; color: var(--muted); font-size: 0.8rem; }

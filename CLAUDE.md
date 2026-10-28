@@ -89,8 +89,8 @@ over one minute as inlet temp fell — **unknown, probably cascade load/demand; 
 - `navien/` — the service package. Phase 0: protocol, decode, state, rawlog, source.
   Phase 1: `service.py` (wiring, reader thread → event loop), `hub.py` (fan-out),
   `api.py` (FastAPI REST, OpenAPI at `/docs`, JSON index at `/api`). Phase 2: `ws.py`
-  (`/ws` push protocol, documented in its docstring). Phase 3a: `web/` — the dashboard served
-  at `/` (plain ES modules, no build step, no CDN). No browser or JS engine on the Pi, so
+  (`/ws` push protocol, documented in its docstring). Phase 3a/3b: `web/` — the dashboard served
+  at `/` (charts are our own SVG in `web/charts.js`) (plain ES modules, no build step, no CDN). No browser or JS engine on the Pi, so
   frontend changes can only be checked by the user (dev server: `--replay … --loop
   --http-port 8765`, then http://192.168.100.181:8765).
   `venv/bin/python -m navien` serves http://<pi>:8000 from the live bus (config `./navien.toml`,

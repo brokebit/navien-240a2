@@ -1,7 +1,8 @@
 // Navien cascade dashboard. Plain ES modules, no build step; talks to /ws (navien/ws.py).
 
-import { DEFAULT_PREFS, fmt, fmtAge, fmtNumber, humanize, unitLabel } from "./units.js";
+import { DEFAULT_PREFS, UNITS, fmt, fmtAge, fmtNumber, humanize, unitLabel } from "./units.js";
 import { Debug } from "./debug.js";
+import { LineChart, StateBand } from "./charts.js";
 
 const STALE_S = 5;                  // no cycle for this long -> data shown as stale
 const HEALTH_EVERY_MS = 5000;
@@ -37,6 +38,54 @@ const app = {
 const $ = (id) => document.getElementById(id);
 const debug = new Debug({ send: (msg) => send(msg), getLatest: () => app.latest });
 
+// ------------------------------------------------------------------ charts
+
+const UNIT_COLORS = ["var(--unit-0)", "var(--unit-1)"];
+const unitSeries = (key) => [0, 1].map((i) => ({
+  label: UNIT_NAMES[i], color: UNIT_COLORS[i],
+  get: (c) => (c.units[String(i)] ? c.units[String(i)][key] : null),
+}));
+const conv = (q) => (p) => ({ fn: UNITS[q][p[q]].conv, label: UNITS[q][p[q]].label });
+
+// Burner sequence states for the band: firing, the ignition/purge sequence around it, idle.
+const SEQUENCE = new Set(["startup", "demand", "pre_purge_1", "pre_purge_2", "pre_ignition", "ignition",
+  "flame_on", "ramp_up", "water_adjustment", "flame_off", "post_purge_1", "post_purge_2", "shutting_down"]);
+const burnerState = (u) => (u.flame ? "firing" : SEQUENCE.has(u.stage) ? "sequence" : "idle");
+
+const charts = [
+  new LineChart($("chart-outlet"), { title: "Outlet temperature", series: unitSeries("outlet_c"),
+    ref: { label: "Setpoint", get: (c) => (c.units["0"] ? c.units["0"].set_c : null) }, conv: conv("temp") }),
+  new LineChart($("chart-inlet"), { title: "Inlet temperature", series: unitSeries("inlet_c"), conv: conv("temp") }),
+  new LineChart($("chart-flow"), { title: "Flow", series: unitSeries("flow_lpm"), conv: conv("flow"), zero: true }),
+  new LineChart($("chart-gas"), { title: "Gas rate", series: unitSeries("gas_kcalh"), conv: conv("gas"), zero: true }),
+  new StateBand($("chart-burner"), {
+    title: "Burner",
+    rows: [0, 1].map((i) => ({
+      label: UNIT_NAMES[i], color: UNIT_COLORS[i],
+      get: (c) => {
+        const u = c.units[String(i)];
+        return u ? { state: burnerState(u), text: u.flame ? `Firing · ${humanize(u.stage)}` : humanize(u.stage) } : null;
+      },
+    })),
+    states: [{ key: "firing", label: "Firing", mix: 100 }, { key: "sequence", label: "Ignition / purge", mix: 40 }],
+  }),
+];
+
+function windowSeconds() {
+  return app.hello ? app.hello.history_seconds : 300;
+}
+
+let chartsQueued = false;
+function renderCharts() {
+  if (chartsQueued) return;            // coalesce bursts (history + resize) into one frame
+  chartsQueued = true;
+  requestAnimationFrame(() => {
+    chartsQueued = false;
+    for (const c of charts) c.update(app.cycles, prefs, windowSeconds());
+  });
+}
+new ResizeObserver(renderCharts).observe(document.querySelector(".chart-grid"));
+
 // ------------------------------------------------------------------ connection
 
 let backoff = 1000;
@@ -69,10 +118,12 @@ function onMessage(msg) {
     case "hello":
       app.hello = msg;
       $("foot-source").textContent = msg.source;
+      $("chart-window").textContent = fmtAge(msg.history_seconds);
       break;
     case "history":
       app.cycles = msg.cycles;
       if (app.cycles.length) onCycle(app.cycles[app.cycles.length - 1], false);
+      renderCharts();
       break;
     case "cycle":
       onCycle(msg, true);
@@ -99,6 +150,7 @@ function onCycle(snap, append) {
   app.latest = snap;
   app.lastCycleAt = Date.now();
   render(snap);
+  if (append) renderCharts();
   debug.onCycle(snap);
 }
 
@@ -253,6 +305,7 @@ function initControls() {
       sync();
       applyUnitLabels();
       if (app.latest) render(app.latest);
+      renderCharts();
     });
     sync();
   }

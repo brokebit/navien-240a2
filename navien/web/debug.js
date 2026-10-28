@@ -2,12 +2,14 @@
 // overlay from /api/fields. Subscribes to the WebSocket "frames" topic only while shown.
 
 import { fmtAge, fmtNumber } from "./units.js";
+import { LineChart } from "./charts.js";
 
 // Order of the streams within a bus cycle (PROTOCOL_NOTES.md §3); unknown streams go last.
 const STREAM_ORDER = ["50>51/10", "51>50/90", "51>0F/90", "50>52/10", "50>50/90", "50>0F/90", "50>50/10"];
 const HEADER_LEN = 6;
 const CHANGE_LEVELS = [[3, "chg-1"], [15, "chg-2"], [60, "chg-3"]];   // seconds since change -> class
 const FRAMELOG_LINES = 60;
+const BYTE_HISTORY = 600;            // frames kept per stream for the byte plot (~10 min at 1/s)
 
 const hex2 = (b) => b.toString(16).padStart(2, "0");
 
@@ -27,6 +29,9 @@ export class Debug {
     this.counters = document.getElementById("bus-counters");
     this.logEl = document.getElementById("framelog");
     this.health = null;
+    this.chartEl = document.getElementById("byte-chart");
+    this.byteChart = null;
+    this.chartKey = null;
 
     this.list.addEventListener("click", (e) => {
       const b = e.target.closest(".b[data-i]");
@@ -89,7 +94,7 @@ export class Debug {
     let s = this.streams.get(f.stream);
     if (!s) {
       s = { stream: f.stream, kind: f.kind, count: 0, fails: 0, last: null, ts: [], changedAt: [],
-            seen: [], row: null, spans: [] };
+            seen: [], row: null, spans: [], hist: [] };
       this.streams.set(f.stream, s);
     }
     s.count += 1;
@@ -105,6 +110,8 @@ export class Debug {
       if (seen.values.size <= 32) seen.values.add(bytes[i]);
     }
     s.last = bytes;
+    s.hist.push({ ts: f.ts, bytes });
+    if (s.hist.length > BYTE_HISTORY) s.hist.shift();
     s.lastTs = f.ts;
     s.lastRecv = now;
 
@@ -232,6 +239,7 @@ export class Debug {
     const s = sel && this.streams.get(sel.stream);
     if (!s || !s.last || sel.index >= s.last.length) {
       this.detail.hidden = true;
+      this.chartEl.hidden = true;
       return;
     }
     const i = sel.index;
@@ -254,6 +262,26 @@ export class Debug {
     ];
     this.detail.hidden = false;
     this.detail.textContent = lines.join("\n");
+    this.renderByteChart(s, i);
+  }
+
+  renderByteChart(s, i) {
+    // One chart, rebuilt when the selection changes; coloured by the sending unit.
+    const key = `${s.stream}#${i}`;
+    if (this.chartKey !== key) {
+      if (this.byteChart) this.byteChart.destroy();
+      const src = parseInt(s.stream.slice(0, 2), 16) - 0x50;
+      this.byteChart = new LineChart(this.chartEl, {
+        title: `${s.stream} frame[${i}] over time`,
+        series: [{ label: `frame[${i}]`, color: src === 1 ? "var(--unit-1)" : "var(--unit-0)", get: (h) => h.bytes[i] }],
+        conv: () => ({ fn: (v) => v, label: "" }),
+        height: 110,
+      });
+      this.chartKey = key;
+    }
+    this.chartEl.hidden = false;
+    const span = s.hist.length > 1 ? s.hist[s.hist.length - 1].ts - s.hist[0].ts : 60;
+    this.byteChart.update(s.hist, {}, Math.max(60, span));
   }
 
   logFrame(f) {

@@ -41,6 +41,18 @@
 
   <section id="units" class="units" aria-label="Heaters"></section>
 
+  <section class="charts" aria-label="Last minutes">
+    <div class="charts-head"><h2>Last <span id="chart-window">5 min</span></h2>
+      <span class="muted small">hover, tap or use arrow keys on a chart to read values</span></div>
+    <div class="chart-grid">
+      <div id="chart-outlet"></div>
+      <div id="chart-inlet"></div>
+      <div id="chart-flow"></div>
+      <div id="chart-gas"></div>
+      <div id="chart-burner" class="wide"></div>
+    </div>
+  </section>
+
   <section id="debug" class="debug" hidden aria-label="Debug: raw bus frames">
     <div class="debug-head">
       <h2>Bus frames</h2>
@@ -57,6 +69,7 @@
     </div>
     <div id="streams" class="streams"></div>
     <div id="byte-detail" class="byte-detail" hidden></div>
+    <div id="byte-chart" class="byte-chart" hidden></div>
     <div class="debug-cols">
       <div>
         <h3>Bus counters</h3>

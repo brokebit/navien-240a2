@@ -42,7 +42,7 @@ def test_dashboard_is_served(replay_client):
     r = replay_client.get("/")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     assert "<title>Navien cascade</title>" in r.text and r.headers["cache-control"] == "no-cache"
-    for name in ("app.js", "units.js", "debug.js", "style.css"):
+    for name in ("app.js", "units.js", "debug.js", "charts.js", "style.css"):
         r = replay_client.get(f"/{name}")
         assert r.status_code == 200, name
     assert "javascript" in replay_client.get("/app.js").headers["content-type"]

@@ -249,8 +249,9 @@ CLI flags override (`--replay`, `--speed`, `--port`, `--http-port`, `--headless`
   marked, counters and cadence per stream.
 - **Units toggle:** °C/°F, L/min/GPM, kcal/h / BTU/h, stored in `localStorage`. Conversion
   is client-side only.
-- **Charts (Phase 3b):** uPlot (small, built for streaming time series), vendored into
-  `web/vendor/`. Temperatures, flow, gas rate, capacity per unit, a stage/flame band, and in
+- **Charts (Phase 3b):** own small SVG components in `web/charts.js` (changed from the
+  original uPlot plan on 2026-10-28: no third-party code to fetch and vendor, ≤ 300 points per
+  series, and exact control over the dataviz specs, hover sync and touch). Temperatures, flow, gas rate, capacity per unit, a stage/flame band, and in
   debug mode "plot any byte" (pick stream + frame index) — useful for the `[26..28]` mystery.
 
 ### 1.10 InfluxDB 1.x (Phase 4)
@@ -426,4 +427,14 @@ an offline analyzer tool.
   (unit identity = categorical slots 1/2; status colours only for health, always with icon +
   label); live values use tabular figures so they don't jitter. No JS engine or browser on
   the Pi: the JS was checked statically only, so the user's desktop/phone check is the real test.
+- 2026-10-28 — Phase 3b implemented: `web/charts.js` (LineChart, StateBand; no uPlot, see
+  §1.9). Charts for outlet temperature (with setpoint reference), inlet temperature, flow,
+  gas rate, and a burner band (firing / ignition-purge per unit); window = `history_seconds`,
+  filled from the `history` message and re-filled after reconnect or `gap`. One y-axis per
+  chart, unit colours as identity, legend + end labels (dropped on collision), crosshair
+  synced across charts with a tooltip for every series, keyboard (arrows/Home/End/Esc) and
+  touch scrubbing, a table view per chart. Debug: plot of the selected byte over the last
+  600 frames of its stream. Gas rate and burner output % are the same quantity (heat
+  capacity = kcal/h ÷ 504), so only gas rate is charted; operating capacity (water[17]) is
+  not charted until its meaning is clearer. JS checked statically only.
 
