@@ -3,7 +3,7 @@
 # "Data source" dropdown either way.
 apiVersion: 1
 datasources:
-  - name: Navien InfluxDB
+  - name: influxdb-navien     # the dashboards preselect this name
     type: influxdb
     uid: navien-influx
     access: proxy

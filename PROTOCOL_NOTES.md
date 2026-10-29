@@ -253,9 +253,28 @@ possibly a per-unit firing target the slave reads.
 an earlier count of 16 + 8 was wrong), each 1–3 min,
 at a fixed flow per unit (master ≈15.2 L/min, slave ≈13.5 L/min), with inlet reading warm
 loop water (37–46 °C). The slave's runs repeat every ~31.5 min (15:53, 16:24, 16:56, 17:28,
-18:00, …); the master's mostly start right after a DHW draw ends. This is consistent with
-each unit running its own temperature-triggered recirculation, and confirms the upstream
-enum value `08` = DHW recirculating. During recirc `0x41`[16] = 0 and [9] = `0B`. The
+18:00, …); the master's mostly start right after a DHW draw ends. This confirms the upstream
+enum value `08` = DHW recirculating.
+
+**Recirculation trigger: a 30-minute timer, not temperature** (Influx events,
+2026-10-28 15:45 – 10-29 07:18, 71 runs). Each unit keeps its own timer:
+- A run starts 1798–1799 s after that unit's previous run *ended*, every time (all 52 timer
+  runs). The start-to-start interval therefore varies with run length (e.g. 117.8 s run →
+  next start 1916 s later, 73.9 s run → 1872 s). Start inlet varies 39–43.5 °C. A
+  temperature threshold would not give a constant off time to ±1 s, independent of the
+  night's ambient.
+- Every DHW draw on a unit (17 of 17) goes straight into a recirc run (water[8] `20` → `08`
+  within 0–1 s, inlet still cold, 21–41 °C). That run restarts the 30-min timer. A timer
+  expiring during a draw waits for the draw to end (master 10-29 06:16:40).
+- The two units drifted into step overnight (starts within 1–10 s) only because their
+  timers happened to align; nothing links them.
+- Runs end with the outlet at the setpoint (51–52.5 °C); what ends a run is not yet
+  analysed. One cluster of four short slave runs 5 s apart (19:32–19:33) is unexplained.
+- Cost over the window at $0.65/therm: timer runs ≈0.82 therm/day ($0.53), post-draw runs
+  ≈0.23 therm/day ($0.15).
+- water[24] = `02` and [33] = `02` throughout; on upstream's reading that is "scheduled
+  recirc enabled", which fits a firmware schedule/interval setting. The installer-menu
+  setting behind the 30 min is unverified. During recirc `0x41`[16] = 0 and [9] = `0B`. The
 screenshot of the dashboard at 19:00–19:02 shows one of these, not a tap draw.
 
 ### 4.5 Master `0x44` frame — `50→50`, dir 0x10, len 34 (measured)

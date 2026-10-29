@@ -363,9 +363,9 @@ Pi 4.
 
 **This installation (decided 2026-10-28).** InfluxDB OSS 1.13.1 at
 `https://iot.dynowski.com:8086` (LAN, 192.168.100.12), authentication off, database
-`navien`. The user creates the database and RPs; Grafana's datasource is added by the user,
-who supplies its name; dashboards are JSON files the user imports. Gas price default
-$1.50/therm (rough US residential average) until the user's tariff is known.
+`navien`. The user creates the database and RPs; Grafana's datasource is added by the user
+(named `influxdb-navien`); dashboards are JSON files the user imports. Gas price default
+$0.65/therm: the user's all-in rate (commodity $0.33 plus fees, October 2026); Grafana 13.2.4.
 
 **Retention.** Two retention policies, created by the operator (statements in
 `grafana/README.md`): samples (`navien_unit`, `navien_cascade`) in `samples_90d`
@@ -653,3 +653,6 @@ an offline analyzer tool.
   the backfill (e.g. 2026-10-28: 491 BTU per gallon, delivered heat ÷ reported gas 92 %).
   `tests/test_grafana.py`: files match the generator; every quoted name in every query is a
   measurement, field, tag or alias of the schema in the right retention policy.
+- 2026-10-29 — Phase 4 accepted by the user (spot check in Grafana 13.2.4). Gas price
+  default changed to $0.65/therm, the user's all-in rate; the data source variable
+  preselects `influxdb-navien` (v0.7.1).

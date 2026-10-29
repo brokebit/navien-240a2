@@ -24,8 +24,11 @@
         "regex": "",
         "hide": 0,
         "refresh": 1,
-        "current": {},
-        "options": []
+        "options": [],
+        "current": {
+          "text": "influxdb-navien",
+          "value": "influxdb-navien"
+        }
       },
       {
         "type": "constant",
@@ -42,11 +45,11 @@
         "type": "textbox",
         "name": "price_per_therm",
         "label": "Gas $/therm",
-        "query": "1.50",
+        "query": "0.65",
         "hide": 0,
         "current": {
-          "text": "1.50",
-          "value": "1.50"
+          "text": "0.65",
+          "value": "0.65"
         },
         "options": []
       },

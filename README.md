@@ -161,7 +161,7 @@ grafana/           InfluxDB/Grafana setup, example queries, six dashboards (buil
 | 3b: charts | v0.4.0 | done |
 | 4a: InfluxDB 1.x writer | v0.5.0 | done |
 | 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | done |
-| 4c: Grafana dashboards | v0.7.0 | done |
+| 4c: Grafana dashboards | v0.7.x | done (accepted 2026-10-29) |
 
 Several bytes are still undecoded, notably the master→slave `0x41` frame's `[26..28]` and
 the gas-frame counters. See `PROTOCOL_NOTES.md` §6. Community decodes for single-unit

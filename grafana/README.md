@@ -189,8 +189,9 @@ and linked to each other from the top bar:
 | `navien-cascade.json` | burner hours, burns, short burns and failed starts, time to ignition, peak combined flow, outlet − setpoint, slave call-ins, errors, the (unverified) gas counter |
 | `navien-detail.json` | per-second samples: temperatures, flow, gas rate, burner stage and heating mode timelines, capacity, cascade bytes, bus and writer health |
 
-**Import:** Dashboards → New → Import → upload the JSON file. Choose your InfluxDB data
-source in the **Data source** dropdown at the top, set **Gas $/therm** (default 1.50),
+**Import:** Dashboards → New → Import → upload the JSON file. The **Data source** dropdown
+at the top preselects `influxdb-navien` (falls back to the first InfluxDB source if there is
+none of that name); set **Gas $/therm** (default 0.65, this installation's all-in rate),
 then save the dashboard (tick "Save current variable values as dashboard default") so they
 stick. Re-importing a newer version with the same uid replaces it.
 

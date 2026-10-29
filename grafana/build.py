@@ -189,15 +189,20 @@ def text(content: str, w=24, h=3) -> dict:
 
 # ---------------------------------------------------------------- dashboard
 
+DATASOURCE = "influxdb-navien"   # this installation's data source name (user, 2026-10-29)
+
+
 def variables(price=True, shower=False) -> list[dict]:
     v = [{"type": "datasource", "name": "datasource", "label": "Data source", "query": "influxdb",
-          "regex": "", "hide": 0, "refresh": 1, "current": {}, "options": []},
+          "regex": "", "hide": 0, "refresh": 1, "options": [],
+          # preselects this installation's data source; Grafana falls back to the first InfluxDB one
+          "current": {"text": DATASOURCE, "value": DATASOURCE}},
          {"type": "constant", "name": "tz", "query": "America/Chicago", "hide": 2,
           "current": {"text": "America/Chicago", "value": "America/Chicago"}, "options": []}]
     if price:
         v.append({"type": "textbox", "name": "price_per_therm", "label": "Gas $/therm",
-                  "query": "1.50", "hide": 0,
-                  "current": {"text": "1.50", "value": "1.50"}, "options": []})
+                  "query": "0.65", "hide": 0,
+                  "current": {"text": "0.65", "value": "0.65"}, "options": []})
     if shower:
         v.append({"type": "textbox", "name": "shower_min_s", "label": "Shower ≥ s",
                   "query": "240", "hide": 0,

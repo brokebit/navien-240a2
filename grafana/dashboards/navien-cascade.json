@@ -24,8 +24,11 @@
         "regex": "",
         "hide": 0,
         "refresh": 1,
-        "current": {},
-        "options": []
+        "options": [],
+        "current": {
+          "text": "influxdb-navien",
+          "value": "influxdb-navien"
+        }
       },
       {
         "type": "constant",

@@ -176,8 +176,8 @@ the dev tree or `navien-capture.py` against the port.
 
 Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebSocket →
 3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana).
-4c is built (v0.7.0); the `phase-4` tag waits for the user's import check. Gas price is a
-dashboard variable (default $1.50/therm). Each phase is reviewed with the user before
+Phase 4 is done (v0.7.1, tag `phase-4`). Gas price is a
+dashboard variable (default $0.65/therm, the user's all-in rate incl. fees; commodity alone is $0.33). Each phase is reviewed with the user before
 the next starts.
 
 Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):
@@ -185,7 +185,7 @@ Reverse-engineering track (runs alongside; the dashboard's debug view and raw lo
 1. ~~Slave firing~~ — done from the service log (2026-10-28 18:23, PROTOCOL_NOTES §4.4.1).
    Still open: what triggers staging, and the meaning of `0x41`[26..28]; a setpoint change
    would test `[26]` = setpoint×2 − inlet×2 + 50.
-2. ~~Recirculation~~ — water `[8]` = `08` confirmed (both units, ~30 min cycle). Still open:
+2. ~~Recirculation~~ — water `[8]` = `08` confirmed; trigger is a per-unit 30-min timer from the end of the last run, plus a run after every draw (PROTOCOL_NOTES §4.4.1). Still open:
    `[33]`, `[25]`.
 3. Compare gas `[24]` and the version bytes against the installer-menu display values.
 4. Only then, and only when the user asks: NaviLink-present announce packet
