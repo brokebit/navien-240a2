@@ -45,9 +45,12 @@ class InfluxCfg:
     database: str = "navien"
     username: str = ""
     password: str = ""
-    retention_policy: str = ""
+    retention_policy: str = "samples_90d"      # samples (navien_unit, navien_cascade); "" = db default
+    rollup_retention_policy: str = "forever"   # everything else; "" = db default
     batch_seconds: float = 10.0
-    max_queue: int = 3600
+    max_queue: int = 50000              # points held while Influx is unreachable
+    timeout_s: float = 10.0
+    sample_every_s: float = 1.0         # per-cycle samples at most this often
 
 
 @dataclass
@@ -85,4 +88,6 @@ def load(path: str | Path | None = None) -> Config:
             _apply(cfg, tomllib.load(f), "")
     if cfg.rawlog.rotate not in ("hourly", "daily"):
         raise ValueError("rawlog.rotate must be 'hourly' or 'daily'")
+    if cfg.influx.batch_seconds <= 0 or cfg.influx.max_queue < 1 or cfg.influx.timeout_s <= 0:
+        raise ValueError("influx.batch_seconds, max_queue and timeout_s must be positive")
     return cfg

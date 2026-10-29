@@ -72,8 +72,9 @@ class Field:
 F = Field
 
 WATER_FIELDS = [
-    F("heating_mode", 8, "enum", enum=HEATING_MODES, confidence="upstream",
-      note="00 idle, 20 DHW demand measured; 08 recirc from upstream"),
+    F("heating_mode_code", 8),
+    F("heating_mode", 8, "enum", enum=HEATING_MODES,
+      note="00 idle, 08 recirc, 20 DHW demand measured (PROTOCOL_NOTES §4.4.1)"),
     F("power_on", 9, "bool", mask=0x01, confidence="upstream"),
     F("no_hotbutton", 9, "bool", mask=0x20, confidence="upstream"),
     F("stage_code", 10),
@@ -112,7 +113,7 @@ GAS_FIELDS = [
     F("dhw_hours", 38, "u16", unit="h", confidence="unverified"),
 ]
 
-# Master -> slave 0x41 frame (PROTOCOL_NOTES §4.4): the master's own state, one cycle late.
+# Master -> slave 0x41 frame (PROTOCOL_NOTES §4.4): cascade-wide values, one cycle late.
 CASCADE_FIELDS = [
     # Master -> slave, once per cycle: cascade-wide values, not the master's own state
     # (PROTOCOL_NOTES §4.3). Temperatures, capacity and flow are over the units in DHW demand.

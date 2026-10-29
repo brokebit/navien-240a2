@@ -91,7 +91,8 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
 - `navien/` — the service package. Phase 0: protocol, decode, state, rawlog, source.
   Phase 1: `service.py` (wiring, reader thread → event loop), `hub.py` (fan-out),
   `api.py` (FastAPI REST, OpenAPI at `/docs`, JSON index at `/api`). Phase 2: `ws.py`
-  (`/ws` push protocol, documented in its docstring). Phase 3a/3b: `web/` — the dashboard served
+  (`/ws` push protocol, documented in its docstring). Phase 4a: `influx.py` (`SCHEMA`, line
+  protocol, batching writer; live bus only, never `--replay`). Phase 3a/3b: `web/` — the dashboard served
   at `/` (charts are our own SVG in `web/charts.js`) (plain ES modules, no build step, no CDN). No browser or JS engine on the Pi, so
   frontend changes can only be checked by the user (dev server: `--replay … --loop
   --http-port 8765`, then http://192.168.100.181:8765).
@@ -103,6 +104,7 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
   (local to the Pi), so the capture-based tests only run here.
 - `raw/` (gitignored) — the service's rotating raw log, `navien_<UTC period>.raw` + `.idx`
   (frame-start timestamps). Re-parse these with `navien.source.load_chunks`.
+- `grafana/` — Influx setup statements and example queries (`README.md`); dashboards from Phase 4c.
 - `packaging/` + `scripts/build-deb.sh` — the Debian package (PLAN.md §1.11): systemd unit,
   udev rule (`/dev/navien`, FTDI latency 1 ms), sysusers, default `/etc` config, maintainer
   scripts. Nothing is installed by hand any more.

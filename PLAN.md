@@ -286,16 +286,17 @@ raw logs ─ backfill: parse → StateModel → Recorder (same code) ───�
 points, `POST /write?db=…&rp=…&precision=ms` via `httpx`, exponential backoff (1 s → 60 s)
 on failure. On overflow it drops the oldest samples first and keeps events/hourly points
 as long as possible; drops are counted. `/api/health` reports queue depth, points written
-and dropped, last success and last error. A 4xx other than 429 (bad line, unknown
-database) is logged and the batch is dropped, not retried forever.
+and dropped, last success and last error. Network errors, timeouts, 5xx, 429 and 401/403/404
+(auth, database or RP missing: fixable on the server) keep the batch and retry; any other
+4xx (bad line, field type conflict, points beyond the RP) drops it as `rejected`.
 
 **Measurements.** Metric units throughout; Grafana converts (§ Grafana below). Tags are
 few and low-cardinality.
 
 | measurement | tags | rate | fields |
 |---|---|---|---|
-| `navien_unit` | `unit` 0/1, `role` master/slave | each cycle | `set_c outlet_c inlet_c flow_lpm capacity_pct gas_kcalh heat_pct`, `stage_code mode_code` (int), `flame power recirc_running` (bool), `error_code error_level`, plus **mode-split** `flow_dhw_lpm flow_recirc_lpm gas_dhw_kcalh gas_recirc_kcalh` (0 outside that mode) |
-| `navien_cascade` | — | each cycle | `units_in_demand flow_lpm capacity_pct inlet_c outlet_c stage2 demand flame recirc x26 x27 x28 toggle_25` |
+| `navien_unit` | `unit` 0/1, `role` master/slave | each cycle | `set_c outlet_c inlet_c flow_lpm capacity_pct gas_kcalh heat_capacity_pct`, `stage_code mode_code` (int), `flame power_on recirc_running` (bool), `error_code error_level`, plus **mode-split** `flow_dhw_lpm flow_recirc_lpm gas_dhw_kcalh gas_recirc_kcalh` (0 outside that mode) |
+| `navien_cascade` | — | each cycle | `units_in_demand flow_lpm capacity_pct set_c inlet_c outlet_c status stage2 demand flame recirc x26 x27 x28 toggle_25` |
 | `navien_counters` | `unit` | each minute | gas[24..37] counters (unverified), version bytes |
 | `navien_bus` | — | each minute | frames, checksum failures, resyncs, cycles, timeouts, rawlog drops, influx drops |
 | `navien_event` | `type`, `unit` (0/1/`all`) | at event end, timestamped at its start | see below |
@@ -596,3 +597,11 @@ an offline analyzer tool.
   mode-split gas/flow fields make integrals exact; a backfill command loads the raw logs
   through the same code; Grafana dashboards (six) ship as JSON with a schema-consistency
   test. Split into 4a (writer, v0.5.0), 4b (events/backfill, v0.6.0), 4c (Grafana, v0.7.0).
+- 2026-10-28 — Phase 4a implemented: `navien/influx.py` (`SCHEMA`, line protocol with type
+  coercion, `Points` snapshot→lines, `InfluxWriter` with per-RP queues, batching, backoff,
+  samples-first overflow drop, health under `/api/health` → `influx`). Writes
+  `navien_unit`/`navien_cascade` every cycle to `samples_90d`, `navien_counters`/`navien_bus`
+  each minute to `forever`; disabled under `--replay`. Water `heating_mode_code` added to the
+  decoder for `mode_code`. `grafana/README.md`: database/RP statements, data source, example
+  queries. Checked against the real server (1.13.1): a write to a missing database gets a 404
+  and is retried, not dropped.

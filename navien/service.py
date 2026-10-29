@@ -14,6 +14,7 @@ import time
 
 from .config import Config
 from .hub import Hub
+from .influx import InfluxWriter
 from .rawlog import RawLogger
 from .source import Reader, ReplaySource, SerialSource
 from .state import StateModel
@@ -44,6 +45,15 @@ class Service:
         # With replay at speed 0 frame times are historical, so wall-clock ticks would
         # close every cycle early; only tick when frame time tracks the wall clock.
         self.wall_clock_frames = not replay or speed > 0
+        # Influx gets the live bus only: a dev replay must not write historical cycles into
+        # the production database (loading raw logs is the job of `backfill`, Phase 4b).
+        self.influx = None
+        if cfg.influx.enabled and replay:
+            log.info("influx: disabled for --replay")
+        elif cfg.influx.enabled:
+            self.influx = InfluxWriter(cfg.influx, stale_s=cfg.state.bus_timeout_s,
+                                       bus_extra=self._bus_extra)
+        self._influx_task: asyncio.Task | None = None
         self.reader = Reader(source, on_frames=self._from_reader,
                              on_bytes=self.rawlog.put if self.rawlog else None,
                              on_finished=self._reader_finished)
@@ -60,6 +70,10 @@ class Service:
             self.rawlog.start()
         self.reader.start()
         self._ticker = asyncio.create_task(self._tick_loop())
+        if self.influx:
+            sub = self.hub.subscribe({"cycle"}, maxsize=600, name="influx")
+            self._influx_task = asyncio.create_task(self.influx.run(sub))
+            log.info("influx: writing to %s db %s", self.cfg.influx.url, self.cfg.influx.database)
         log.info("service started, source %s", self.source_desc)
 
     async def stop(self) -> None:
@@ -68,6 +82,10 @@ class Service:
         await asyncio.to_thread(self.reader.stop)
         if self.rawlog:
             await asyncio.to_thread(self.rawlog.stop)
+        if self._influx_task:
+            self._influx_task.cancel()
+            await asyncio.gather(self._influx_task, return_exceptions=True)
+            await self.influx.close()
         b = self.state.bus_stats()
         log.info("service stopped: frames %d, checksum failures %d, resyncs %d%s",
                  b["frames"], b["checksum_fail"], self.reader.parser.resyncs,
@@ -105,6 +123,15 @@ class Service:
 
     # ---------------------------------------------------------------- queries
 
+    def _bus_extra(self) -> dict:
+        """Service-level counters for the navien_bus measurement."""
+        return {
+            "resyncs": self.reader.parser.resyncs,
+            "reader_bytes": self.reader.bytes_total,
+            "rawlog_dropped_chunks": self.rawlog.dropped_chunks if self.rawlog else 0,
+            "ws_clients": sum(1 for s in self.hub.subscribers if s.name.startswith("ws")),
+        }
+
     def latest(self) -> dict:
         """The last completed cycle (or the partial state before the first one closes)."""
         return self.state.history[-1] if self.state.history else self.state.snapshot()
@@ -136,6 +163,7 @@ class Service:
             "bus": self.state.bus_stats(),
             "history_cycles": len(self.state.history),
             "rawlog": rawlog,
+            "influx": self.influx.health() if self.influx else None,
             "hub": {"published": self.hub.published, "subscribers": self.hub.stats()},
             "uptime_s": round(now - self.started_at, 1),
         }

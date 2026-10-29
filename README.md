@@ -26,10 +26,10 @@ phased plan are in [`PLAN.md`](PLAN.md).
 - **Replay mode:** feed a raw log or capture through the whole stack instead of the serial
   port, at real time or faster.
 - **Debian package** with a hardened systemd service and a udev rule.
-
-InfluxDB 1.x export (with detected events such as showers and recirculation runs, hourly
-totals, and Grafana dashboards) is the next phase and isn't built yet. The `[influx]`
-config section already exists but does nothing.
+- **InfluxDB 1.x export:** per-second samples of both units and the cascade, plus counters
+  and bus health, batched and buffered through outages. Setup in
+  [`grafana/README.md`](grafana/README.md). Detected events (showers, recirculation runs),
+  hourly totals and Grafana dashboards are the next steps.
 
 ## Hardware
 
@@ -115,7 +115,7 @@ charts are hand-written SVG in `charts.js`.
 | `GET /api/history?seconds=300` | in-memory history |
 | `GET /api/frames?limit=100&stream=50>51/10` | recent raw frames |
 | `GET /api/fields` | the decoder's field table |
-| `GET /api/health` | bus status, counters, clients, raw log file |
+| `GET /api/health` | bus status, counters, clients, raw log file, Influx writer |
 | `WS /ws` | push channel: `hello`, `history`, then a `cycle` every second; `frame` messages on `{"subscribe":["frames"]}` |
 | `GET /docs` | OpenAPI docs |
 
@@ -134,6 +134,7 @@ navien-capture.py  standalone receive-only sniffer (proof of concept)
 PROTOCOL_NOTES.md  protocol findings and open questions
 PLAN.md            architecture, phased plan, changelog
 docs/              README images
+grafana/           InfluxDB/Grafana setup, example queries (dashboards from 4c)
 ```
 
 ## Status
@@ -145,8 +146,8 @@ docs/              README images
 | 2: WebSocket push | v0.2.0 | done |
 | 3a: text dashboard and debug view | v0.3.0 | done |
 | 3b: charts | v0.4.0 | done |
-| 4a: InfluxDB 1.x writer | v0.5.0 | next |
-| 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | planned |
+| 4a: InfluxDB 1.x writer | v0.5.0 | done |
+| 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | next |
 | 4c: Grafana dashboards | v0.7.0 | planned |
 
 Several bytes are still undecoded, notably the master→slave `0x41` frame's `[26..28]` and

@@ -24,12 +24,15 @@ keep_days = 60
 max_total_mb = 2048
 flush_seconds = 5.0
 
-[influx]                      # Phase 4
+[influx]                      # InfluxDB 1.x; setup statements in grafana/README.md
 enabled = false
 url = "http://localhost:8086"
 database = "navien"
-username = ""
+username = ""                 # leave empty if the server has auth disabled
 password = ""
-retention_policy = ""
+retention_policy = "samples_90d"      # per-cycle samples (navien_unit, navien_cascade)
+rollup_retention_policy = "forever"   # counters, bus stats (later: events, hourly totals)
 batch_seconds = 10.0
-max_queue = 3600
+max_queue = 50000             # points held while Influx is unreachable (~4 h of samples)
+timeout_s = 10.0
+sample_every_s = 1.0          # 1 = every bus cycle
