@@ -195,6 +195,18 @@ none of that name); set **Gas $/therm** (default 0.65, this installation's all-i
 then save the dashboard (tick "Save current variable values as dashboard default") so they
 stick. Re-importing a newer version with the same uid replaces it.
 
+**Upload from the command line:** `scripts/grafana-push.sh` posts all six through Grafana's
+HTTP API into a "Navien" folder, replacing earlier copies. It needs a service account token
+with the Editor role (Administration → Users and access → Service accounts):
+
+```sh
+GRAFANA_URL=https://grafana.example:3000 GRAFANA_TOKEN=glsa_... scripts/grafana-push.sh
+```
+
+The token can live in `~/.config/navien-dash/grafana-token` (mode 600) instead of the
+environment. Pass a directory to upload other copies, e.g. the JSON files of a release.
+Dashboards arrive with their file defaults, so a price you saved in Grafana is reset.
+
 **Provisioning** instead: `provisioning/dashboards/navien.yaml` loads every JSON file in a
 directory on the Grafana host into a "Navien" folder.
 

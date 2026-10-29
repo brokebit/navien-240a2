@@ -110,7 +110,8 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
   (frame-start timestamps). Re-parse these with `navien.source.load_chunks`.
 - `grafana/` — Influx setup statements and example queries (`README.md`); `build.py` generates the
   six dashboards in `dashboards/` (edit build.py, never the JSON; `tests/test_grafana.py` checks
-  them against `SCHEMA`); `provisioning/` examples. Releases attach the dashboard JSON.
+  them against `SCHEMA`); `provisioning/` examples. Releases attach the dashboard JSON;
+  `scripts/grafana-push.sh` uploads them via the Grafana API (user runs it with their token).
 - `packaging/` + `scripts/build-deb.sh` — the Debian package (PLAN.md §1.11): systemd unit,
   udev rule (`/dev/navien`, FTDI latency 1 ms), sysusers, default `/etc` config, maintainer
   scripts. Nothing is installed by hand any more.
