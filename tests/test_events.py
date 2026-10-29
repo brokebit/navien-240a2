@@ -265,3 +265,19 @@ def test_prime_keeps_the_hour_whole_across_a_restart(excerpt_snaps, tmp_path, mo
     assert h["draws"] == full["draws"] and h["recirc_runs"] == full["recirc_runs"]
     big = [f for _, f, _ in events(pts, "draw") if f["units_max"] == "2i"]
     assert len(big) == 1 and big[0]["truncated"] == "false"           # not split by the restart
+
+
+def test_backfill_config_choice(tmp_path, monkeypatch, capsys):
+    import navien.backfill as bf
+    dev = tmp_path / "navien.toml"
+    dev.write_text('[influx]\nenabled = false\nurl = "http://localhost:8086"\n')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(bf, "INSTALLED", True)
+    monkeypatch.setattr(bf, "INSTALLED_CONFIG", tmp_path / "etc.toml")
+    assert bf.default_config() is None                     # installed: never ./navien.toml
+    monkeypatch.setattr(bf, "INSTALLED", False)
+    assert bf.default_config() == Path("navien.toml")
+    # a config with Influx disabled is refused for a real run, allowed for --dry-run
+    assert bf.main([str(EXCERPT)]) == 1
+    assert "not enabled" in capsys.readouterr().err
+    assert bf.main(["--dry-run", str(EXCERPT)]) == 0

@@ -350,7 +350,8 @@ has to be re-run after a backfill. `min_supply_c` = lowest inlet during draws lo
 2 min, the cold-supply estimate.
 
 **Backfill.** `navien-dash backfill [--from WHEN] [--to WHEN] [--dry-run] [PATH…]`
-(default `rawlog.dir`; config `./navien.toml`, else `/etc/navien-dash/navien.toml`): parse
+(default `rawlog.dir`; config `/etc/navien-dash/navien.toml`, in the dev tree `./navien.toml`
+first; refuses a config with Influx disabled unless `--dry-run`): parse
 the raw logs in time order as one stream with their `.idx` timing, run the same StateModel →
 Recorder → writer at full speed with original timestamps. Idempotent (Influx overwrites
 identical series + timestamp), so it can be re-run after a decoder or event-logic fix.
@@ -636,3 +637,7 @@ an offline analyzer tool.
   earlier "24 runs (16 + 8)" was a miscount. One aborted start found (master 18:18:29:
   startup → flame off → post-purge, lit 10 s later). Tests use a 15-minute excerpt of that
   log in `tests/data/` (54 kB).
+- 2026-10-28 — v0.6.1: the installed `navien-dash backfill` read `./navien.toml` when run
+  from the dev checkout (Influx disabled, localhost) instead of the service's config. It
+  now always defaults to `/etc/navien-dash/navien.toml` and refuses a config with Influx
+  disabled.

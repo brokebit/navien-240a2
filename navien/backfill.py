@@ -33,7 +33,15 @@ from .state import StateModel
 
 log = logging.getLogger("navien.backfill")
 
-CONFIG_CANDIDATES = (Path("navien.toml"), Path("/etc/navien-dash/navien.toml"))
+INSTALLED_CONFIG = Path("/etc/navien-dash/navien.toml")
+# The packaged command (code under /opt/navien-dash) always means the service's config; only
+# the dev tree looks at ./navien.toml, which is the dev copy (Influx usually disabled).
+INSTALLED = Path(__file__).resolve().is_relative_to("/opt/navien-dash")
+
+
+def default_config() -> Path | None:
+    candidates = (INSTALLED_CONFIG,) if INSTALLED else (Path("navien.toml"), INSTALLED_CONFIG)
+    return next((p for p in candidates if p.exists()), None)
 NAME_RE = re.compile(r"navien_(\d{8})(?:T(\d{2})Z)?\.raw(\.gz)?$")
 MAX_FAILURES = 8
 
@@ -153,8 +161,8 @@ def main(argv: list[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("paths", nargs="*", type=Path,
                     help="raw log files or directories (default: rawlog.dir)")
-    ap.add_argument("--config", help="TOML config (default: ./navien.toml, else "
-                                     "/etc/navien-dash/navien.toml)")
+    ap.add_argument("--config", help="TOML config (default: /etc/navien-dash/navien.toml; "
+                                     "in the dev tree ./navien.toml if present)")
     ap.add_argument("--from", dest="t_from", metavar="WHEN",
                     help="start, local time: YYYY-MM-DD or YYYY-MM-DDTHH:MM")
     ap.add_argument("--to", dest="t_to", metavar="WHEN",
@@ -166,8 +174,13 @@ def main(argv: list[str]) -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    config_path = args.config or next((p for p in CONFIG_CANDIDATES if p.exists()), None)
+    config_path = args.config or default_config()
     cfg = config_mod.load(config_path)
+    if not cfg.influx.enabled and not args.dry_run:
+        print(f"[influx] is not enabled in {config_path or 'the built-in defaults'} "
+              f"(url {cfg.influx.url}); pass --config with the service's config, "
+              f"e.g. --config {INSTALLED_CONFIG}", file=sys.stderr)
+        return 1
     t_from = parse_time(args.t_from) if args.t_from else 0.0
     t_to = parse_time(args.t_to, end=True) if args.t_to else float("inf")
     files = find_logs(args.paths or [Path(cfg.rawlog.dir)], t_from, t_to)
