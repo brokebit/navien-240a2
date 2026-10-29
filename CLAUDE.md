@@ -178,16 +178,24 @@ the dev tree or `navien-capture.py` against the port.
 
 Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebSocket →
 3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana).
-Phase 4 is done (v0.7.1, tag `phase-4`). Gas price is a
-dashboard variable (default $0.65/therm, the user's all-in rate incl. fees; commodity alone is $0.33). Each phase is reviewed with the user before
-the next starts.
+Phase 4 is done (v0.7.1, tag `phase-4`); all planned phases are complete. Latest release
+v0.7.3 (2026-10-29): Influx status pill on the web dashboard, `navien-dash` journal tag,
+a once-a-minute `status (60 s): …` log line, version in the footer. Not yet confirmed by the
+user on the installed package: the pill's hover tooltip and the status line in the journal.
+New work is feature requests from the user, each reviewed before release. Gas price is a
+dashboard variable (default $0.65/therm, the user's all-in rate incl. fees; commodity alone
+is $0.33). Grafana 13.2.4, data source `influxdb-navien`; the user uploads dashboards with
+`scripts/grafana-push.sh` (service account with the Editor role).
 
 Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):
 
 1. ~~Slave firing~~ — done from the service log (2026-10-28 18:23, PROTOCOL_NOTES §4.4.1).
    Still open: what triggers staging, and the meaning of `0x41`[26..28]; a setpoint change
    would test `[26]` = setpoint×2 − inlet×2 + 50.
-2. ~~Recirculation~~ — water `[8]` = `08` confirmed; trigger is a per-unit 30-min timer from the end of the last run, plus a run after every draw (PROTOCOL_NOTES §4.4.1). Still open:
+2. ~~Recirculation~~ — water `[8]` = `08` confirmed; trigger is a per-unit 30-min timer from
+   the end of the last run, plus a run after every draw (PROTOCOL_NOTES §4.4.1). The user uses
+   the internal pump and doesn't know the setting behind it. Still open: which installer-menu
+   setting sets the 30 min, what ends a run, the 4 short slave runs 5 s apart (10-28 19:32),
    `[33]`, `[25]`.
 3. Compare gas `[24]` and the version bytes against the installer-menu display values.
 4. Only then, and only when the user asks: NaviLink-present announce packet
