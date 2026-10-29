@@ -1,0 +1,15 @@
+# Example Grafana data source provisioning (copy to /etc/grafana/provisioning/datasources/).
+# Not needed if you add the data source in the UI; the dashboards pick it from their
+# "Data source" dropdown either way.
+apiVersion: 1
+datasources:
+  - name: Navien InfluxDB
+    type: influxdb
+    uid: navien-influx
+    access: proxy
+    url: https://iot.dynowski.com:8086
+    jsonData:
+      dbName: navien
+      httpMode: GET
+      timeInterval: 1s          # one sample per bus cycle
+    # Retention policy left empty: the queries name it ("samples_90d" / "forever").

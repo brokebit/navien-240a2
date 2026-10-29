@@ -1,0 +1,851 @@
+{
+  "uid": "navien-recirc",
+  "title": "Navien — Recirculation",
+  "description": "Recirculation runs per unit: how often, how long, what they cost.",
+  "tags": [
+    "navien"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "datasource",
+        "label": "Data source",
+        "query": "influxdb",
+        "regex": "",
+        "hide": 0,
+        "refresh": 1,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "constant",
+        "name": "tz",
+        "query": "America/Chicago",
+        "hide": 2,
+        "current": {
+          "text": "America/Chicago",
+          "value": "America/Chicago"
+        },
+        "options": []
+      },
+      {
+        "type": "textbox",
+        "name": "price_per_therm",
+        "label": "Gas $/therm",
+        "query": "1.50",
+        "hide": 0,
+        "current": {
+          "text": "1.50",
+          "value": "1.50"
+        },
+        "options": []
+      }
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "navien"
+      ],
+      "asDropdown": false,
+      "title": "Navien",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Runs per day",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT COUNT(\"duration_s\") FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '0' AND $timeFilter GROUP BY time(1d) fill(0) tz('$tz')",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT COUNT(\"duration_s\") FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '1' AND $timeFilter GROUP BY time(1d) fill(0) tz('$tz')",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "pointSize": 6,
+            "spanNulls": false,
+            "barAlignment": -1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Master"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slave"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Recirculation gas cost per day",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT SUM(\"gas_recirc_kcal\") / 25200 * $price_per_therm FROM \"forever\".\"navien_hourly\" WHERE \"unit\" = '0' AND $timeFilter GROUP BY time(1d) fill(0) tz('$tz')",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT SUM(\"gas_recirc_kcal\") / 25200 * $price_per_therm FROM \"forever\".\"navien_hourly\" WHERE \"unit\" = '1' AND $timeFilter GROUP BY time(1d) fill(0) tz('$tz')",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "pointSize": 6,
+            "spanNulls": false,
+            "barAlignment": -1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Master"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slave"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Interval between runs",
+      "description": "Minutes since the unit's previous run started. Shorter = the loop cools faster (a heat-loss proxy), or a hot-water draw re-triggered it.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"since_last_s\" / 60 FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '0' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"since_last_s\" / 60 FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '1' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Master"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slave"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "Run duration",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"duration_s\" FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '0' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"duration_s\" FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '1' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Master"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slave"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Gas per run",
+      "description": "",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"gas_kcal\" / 25200 * $price_per_therm FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '0' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"gas_kcal\" / 25200 * $price_per_therm FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '1' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Master"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Slave"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Loop temperature at start / end",
+      "description": "Inlet when the run starts (how cold the loop got) and outlet when it ends.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"start_inlet_c\" * 9 / 5 + 32 FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '0' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master start",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"start_inlet_c\" * 9 / 5 + 32 FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '1' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave start",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"end_outlet_c\" * 9 / 5 + 32 FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '0' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Master end",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"end_outlet_c\" * 9 / 5 + 32 FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND \"unit\" = '1' AND $timeFilter",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Slave end",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "fahrenheit",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": false,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "id": 6
+    },
+    {
+      "type": "table",
+      "title": "Runs",
+      "description": "Unit 0 = master, 1 = slave.",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT \"unit\", \"duration_s\", \"volume_l\" / 3.78541 AS \"gal\", \"gas_kcal\" / 25200 AS \"therms\", \"start_inlet_c\" * 9 / 5 + 32 AS \"start_f\", \"end_outlet_c\" * 9 / 5 + 32 AS \"end_f\", \"since_last_s\" / 60 AS \"since_m\" FROM \"forever\".\"navien_event\" WHERE \"type\" = 'recirc' AND $timeFilter ORDER BY time DESC",
+          "rawQuery": true,
+          "resultFormat": "table",
+          "alias": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unit"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Unit"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_s"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Duration"
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gal"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Gallons"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "therms"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Gas"
+              },
+              {
+                "id": "unit",
+                "value": "suffix: thm"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start_f"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Loop at start"
+              },
+              {
+                "id": "unit",
+                "value": "fahrenheit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "end_f"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Outlet at end"
+              },
+              {
+                "id": "unit",
+                "value": "fahrenheit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "since_m"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Since previous"
+              },
+              {
+                "id": "unit",
+                "value": "m"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Time",
+            "desc": true
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 10
+      },
+      "id": 7
+    }
+  ]
+}

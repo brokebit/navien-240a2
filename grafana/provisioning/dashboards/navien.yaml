@@ -1,0 +1,11 @@
+# Example Grafana dashboard provisioning (copy to /etc/grafana/provisioning/dashboards/)
+# and put the six grafana/dashboards/navien-*.json files in the path below.
+apiVersion: 1
+providers:
+  - name: navien
+    folder: Navien
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true        # lets you save a different gas price as the default
+    options:
+      path: /var/lib/grafana/dashboards/navien

@@ -6,7 +6,8 @@
 #
 # Needs `gh` logged in. The tag must already be on GitHub and the package already built
 # (scripts/build-deb.sh at that tag). Release notes are the tagged commit's message plus
-# install instructions. Re-running for an existing release replaces its .deb only.
+# install instructions. The Grafana dashboards (grafana/dashboards/*.json at the tag) are
+# attached too. Re-running for an existing release replaces the attached files.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -35,14 +36,23 @@ if [ "$REMOTE" != "$LOCAL" ]; then
     exit 1
 fi
 
+# Grafana dashboards as they are at the tag, not in the working tree.
+ASSETS=$(mktemp -d)
+NOTES="$ASSETS/notes.md"
+trap 'rm -rf "$ASSETS"' EXIT
+for f in $(git ls-tree --name-only "$TAG" grafana/dashboards/ | grep '\.json$' || true); do
+    git show "$TAG:$f" > "$ASSETS/$(basename "$f")"
+done
+set -- "$DEB"
+for f in "$ASSETS"/*.json; do
+    [ -e "$f" ] && set -- "$@" "$f"
+done
+
 if gh release view "$TAG" >/dev/null 2>&1; then
-    echo "release $TAG exists; replacing its package"
-    gh release upload "$TAG" "$DEB" --clobber
+    echo "release $TAG exists; replacing its files"
+    gh release upload "$TAG" "$@" --clobber
     exit 0
 fi
-
-NOTES=$(mktemp)
-trap 'rm -f "$NOTES"' EXIT
 SUBJECT=$(git log -1 --format=%s "$TAG" | sed -E "s/ \($TAG\)$//")
 BODY=$(git log -1 --format=%b "$TAG" | sed '/^Co-Authored-By:/d')   # $() drops trailing blank lines
 {
@@ -59,6 +69,9 @@ sudo apt install ./$(basename "$DEB")
 
 Upgrades keep \`/etc/navien-dash/navien.toml\` and the raw logs in \`/var/lib/navien-dash\`.
 EOF
+    if [ $# -gt 1 ]; then
+        printf '\nThe `navien-*.json` files are the Grafana dashboards; setup in `grafana/README.md`.\n'
+    fi
 } > "$NOTES"
 
-gh release create "$TAG" "$DEB" --verify-tag --title "$TAG — $SUBJECT" --notes-file "$NOTES"
+gh release create "$TAG" "$@" --verify-tag --title "$TAG — $SUBJECT" --notes-file "$NOTES"

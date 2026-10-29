@@ -34,6 +34,9 @@ phased plan are in [`PLAN.md`](PLAN.md).
   failed starts), staging and errors, plus hourly litres, kcal and counts split by purpose.
 - **Backfill:** `navien-dash backfill` loads the raw logs into Influx with the same event
   detection, so history starts with the first raw log, not the day Influx was enabled.
+- **Grafana dashboards:** overview, hot water, gas and cost, recirculation, cascade and
+  equipment, and per-second detail, in US units with a gas-price variable
+  ([`grafana/README.md`](grafana/README.md) §7).
 
 ## Hardware
 
@@ -144,7 +147,7 @@ navien-capture.py  standalone receive-only sniffer (proof of concept)
 PROTOCOL_NOTES.md  protocol findings and open questions
 PLAN.md            architecture, phased plan, changelog
 docs/              README images
-grafana/           InfluxDB/Grafana setup, example queries (dashboards from 4c)
+grafana/           InfluxDB/Grafana setup, example queries, six dashboards (build.py -> dashboards/)
 ```
 
 ## Status
@@ -158,7 +161,7 @@ grafana/           InfluxDB/Grafana setup, example queries (dashboards from 4c)
 | 3b: charts | v0.4.0 | done |
 | 4a: InfluxDB 1.x writer | v0.5.0 | done |
 | 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | done |
-| 4c: Grafana dashboards | v0.7.0 | next |
+| 4c: Grafana dashboards | v0.7.0 | done |
 
 Several bytes are still undecoded, notably the master→slave `0x41` frame's `[26..28]` and
 the gas-frame counters. See `PROTOCOL_NOTES.md` §6. Community decodes for single-unit

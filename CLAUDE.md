@@ -108,7 +108,9 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
   draw with stage 2, recirc runs on both units) for the event tests.
 - `raw/` (gitignored) — the service's rotating raw log, `navien_<UTC period>.raw` + `.idx`
   (frame-start timestamps). Re-parse these with `navien.source.load_chunks`.
-- `grafana/` — Influx setup statements and example queries (`README.md`); dashboards from Phase 4c.
+- `grafana/` — Influx setup statements and example queries (`README.md`); `build.py` generates the
+  six dashboards in `dashboards/` (edit build.py, never the JSON; `tests/test_grafana.py` checks
+  them against `SCHEMA`); `provisioning/` examples. Releases attach the dashboard JSON.
 - `packaging/` + `scripts/build-deb.sh` — the Debian package (PLAN.md §1.11): systemd unit,
   udev rule (`/dev/navien`, FTDI latency 1 ms), sysusers, default `/etc` config, maintainer
   scripts. Nothing is installed by hand any more.
@@ -174,7 +176,8 @@ the dev tree or `navien-capture.py` against the port.
 
 Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebSocket →
 3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana).
-4b is done (v0.6.0); 4c needs the user's Grafana data source name and gas price. Each phase is reviewed with the user before
+4c is built (v0.7.0); the `phase-4` tag waits for the user's import check. Gas price is a
+dashboard variable (default $1.50/therm). Each phase is reviewed with the user before
 the next starts.
 
 Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):
