@@ -44,8 +44,9 @@ fi
 NOTES=$(mktemp)
 trap 'rm -f "$NOTES"' EXIT
 SUBJECT=$(git log -1 --format=%s "$TAG" | sed -E "s/ \($TAG\)$//")
+BODY=$(git log -1 --format=%b "$TAG" | sed '/^Co-Authored-By:/d')   # $() drops trailing blank lines
 {
-    git log -1 --format=%b "$TAG" | sed '/^Co-Authored-By:/d'
+    printf '%s\n' "$BODY"
     cat <<EOF
 
 ## Install
