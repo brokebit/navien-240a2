@@ -84,7 +84,8 @@ navien/
   state.py         StateModel: per-unit merge, cycle coalescing, history ring, counters
   hub.py           fan-out to bounded per-subscriber asyncio queues
   api.py           FastAPI app, lifespan wiring, REST + WebSocket routes
-  influx.py        Influx 1.x line-protocol writer (Phase 4)
+  influx.py        Influx 1.x schema + line-protocol writer (Phase 4a)
+  events.py        Recorder: events + hourly rollups from cycles (Phase 4b)
   web/             static dashboard: index.html, app.js, style.css, vendor/uplot.*
 tests/
   test_protocol.py test_decode.py test_state.py test_hub.py test_rawlog.py test_api.py test_influx.py
@@ -97,6 +98,8 @@ packaging/              files installed by the .deb (§1.11)
   navien.toml           /etc/navien-dash/navien.toml (conffile)
   DEBIAN/               control.in, postinst, prerm, postrm, conffiles
 scripts/build-deb.sh    builds dist/navien-dash_<version>_arm64.deb
+scripts/release.sh      GitHub release with the .deb attached
+grafana/                dashboards/*.json, provisioning/ examples, README (Phase 4c)
 ```
 
 `protocol.py`/`decode.py` start as a **port** of the parser, checksum and `light_decode`
@@ -230,9 +233,17 @@ url = "http://influx.lan:8086"
 database = "navien"
 username = ""
 password = ""
-retention_policy = ""
+retention_policy = ""          # samples (navien_unit, navien_cascade), e.g. a 90-day RP
+rollup_retention_policy = ""   # events, hourly, counters, bus, e.g. an infinite RP
 batch_seconds = 10
-max_queue = 3600
+max_queue = 50000              # points
+timeout_s = 10
+sample_every_s = 1
+
+[events]
+debounce_s = 3
+short_burn_s = 30
+hot_band_c = 1.0
 ```
 
 CLI flags override (`--replay`, `--speed`, `--port`, `--http-port`, `--headless`).
@@ -254,19 +265,125 @@ CLI flags override (`--replay`, `--speed`, `--port`, `--http-port`, `--headless`
   series, and exact control over the dataviz specs, hover sync and touch). Temperatures, flow, gas rate, capacity per unit, a stage/flame band, and in
   debug mode "plot any byte" (pick stream + frame index) — useful for the `[26..28]` mystery.
 
-### 1.10 InfluxDB 1.x (Phase 4)
+### 1.10 InfluxDB 1.x, events and Grafana (Phase 4)
 
-- Writer is another Hub subscriber: async task, bounded queue (default 3600 points per
-  measurement ≈ 1 h at 1 Hz), batches every `batch_seconds`, `POST /write?db=…&precision=ms`
-  via `httpx`. Exponential backoff on failure; on overflow drops oldest and counts.
-- Measurements:
-  - `navien_unit`, tags `unit=0|1`, `role=master|slave`; fields: the decoded numeric/bool
-    values plus `stage_code` (int) and `stage` (string).
-  - `navien_cascade`: `demand`, `flame`, `x26`, `x27`, `x28`, `toggle_25`.
-  - `navien_bus`: frame/checksum/resync counters, cycle time, raw-log drops.
-- 1 point per measurement per cycle (~260 k points/day total). Downsampling and retention
-  policies are configured on the Influx side; the plan documents example CQs but does not
-  manage the server.
+Revised 2026-10-28 after the first service-log analysis (PROTOCOL_NOTES §4.4.1): beyond
+raw samples, the useful questions are about *events* (a shower, a recirculation run, a
+burner start) and *totals* (gallons, therms, cost, the recirculation share of gas).
+InfluxQL is good at windowed sums and means but cannot find runs of a state, so the
+service detects events itself and writes them as points. Everything is derived from the
+same cycle snapshots the dashboard uses, so live writes and a backfill from raw logs
+produce identical points.
+
+```
+Reader → StateModel ─ cycle ─▶ Hub ─▶ WebSocket clients
+                                  └─▶ Recorder (events.py) ─ samples, events, hourly ─▶ InfluxWriter ─▶ /write
+raw logs ─ backfill: parse → StateModel → Recorder (same code) ─────────────────────────▶ InfluxWriter
+```
+
+**Writer (`navien/influx.py`).** A Hub subscriber task. Bounded queue in points
+(`max_queue`, default 50 000 ≈ 4 h of samples), batches every `batch_seconds` or 5 000
+points, `POST /write?db=…&rp=…&precision=ms` via `httpx`, exponential backoff (1 s → 60 s)
+on failure. On overflow it drops the oldest samples first and keeps events/hourly points
+as long as possible; drops are counted. `/api/health` reports queue depth, points written
+and dropped, last success and last error. A 4xx other than 429 (bad line, unknown
+database) is logged and the batch is dropped, not retried forever.
+
+**Measurements.** Metric units throughout; Grafana converts (§ Grafana below). Tags are
+few and low-cardinality.
+
+| measurement | tags | rate | fields |
+|---|---|---|---|
+| `navien_unit` | `unit` 0/1, `role` master/slave | each cycle | `set_c outlet_c inlet_c flow_lpm capacity_pct gas_kcalh heat_pct`, `stage_code mode_code` (int), `flame power recirc_running` (bool), `error_code error_level`, plus **mode-split** `flow_dhw_lpm flow_recirc_lpm gas_dhw_kcalh gas_recirc_kcalh` (0 outside that mode) |
+| `navien_cascade` | — | each cycle | `units_in_demand flow_lpm capacity_pct inlet_c outlet_c stage2 demand flame recirc x26 x27 x28 toggle_25` |
+| `navien_counters` | `unit` | each minute | gas[24..37] counters (unverified), version bytes |
+| `navien_bus` | — | each minute | frames, checksum failures, resyncs, cycles, timeouts, rawlog drops, influx drops |
+| `navien_event` | `type`, `unit` (0/1/`all`) | at event end, timestamped at its start | see below |
+| `navien_hourly` | `unit` (0/1/`all`) | at each UTC hour end | see below |
+
+The mode-split fields exist because `INTEGRAL()` over a `WHERE mode_code = …` filter
+interpolates across the gaps and over-counts; integrating a field that is 0 outside its
+mode is exact.
+
+**Events (`navien/events.py`).** A pure state machine over cycle snapshots; no I/O, no
+clock of its own (uses cycle timestamps), so it is tested by replaying captures and raw
+logs. Transitions are debounced (`events.debounce_s`, default 3 s) so a one-cycle blip
+neither splits nor creates an event.
+
+| `type` | unit | starts / ends | fields |
+|---|---|---|---|
+| `draw` | `all` | any unit in DHW demand (`0x41`[16] > 0) / none | `duration_s volume_l gas_kcal peak_flow_lpm mean_outlet_c min_inlet_c time_to_hot_s units_max` (2 = slave was called in) |
+| `draw_unit` | 0/1 | that unit's water[8] = `20` | same, per unit |
+| `recirc` | 0/1 | that unit's water[8] = `08` | `duration_s volume_l gas_kcal start_inlet_c end_outlet_c since_last_s` |
+| `burn` | 0/1 | stage leaves standby / returns to standby or dhw_wait | `duration_s flame_s ignition_s` (startup→flame_on) `mode_code short` (flame < `events.short_burn_s`, default 30 s) `failed` (no flame_on reached) |
+| `stage2` | `all` | `0x41`[20] bit `0x02` set / cleared | `duration_s trigger_flow_lpm trigger_capacity_pct` (master's, at the set cycle) |
+| `error` | 0/1 | water[14..15] ≠ 0 / = 0 | `code level duration_s` |
+
+`time_to_hot_s`: from draw start until outlet ≥ setpoint − `events.hot_band_c` (default
+1 °C); empty if never reached. Draw kinds (hand-wash, shower, tub) are not classified in
+the service: dashboards filter on `duration_s`, `volume_l` and `peak_flow_lpm`, so the
+thresholds can change without rewriting history.
+
+**Hourly rollups.** Written by the Recorder at each UTC hour end (and for the partial hour
+at shutdown): per unit and `all`: `water_dhw_l water_recirc_l gas_dhw_kcal gas_recirc_kcal
+gas_other_kcal draws recirc_runs burns short_burns failed_ignitions flame_s stage2_s
+peak_flow_lpm min_supply_c coverage_s`. `coverage_s` is the seconds of bus data seen in
+that hour; a later backfill of the full hour overwrites a partial one (same series, same
+timestamp). Daily, weekly and monthly figures are `SUM()` over hourly with
+`GROUP BY time(1d) tz('America/Chicago')`, so no continuous queries are needed and nothing
+has to be re-run after a backfill. `min_supply_c` = lowest inlet during draws longer than
+2 min, the cold-supply estimate.
+
+**Backfill.** `navien-dash backfill [--from DATE] [--to DATE] [PATH…]` (default
+`rawlog.dir`): parse each raw log with its `.idx` timing, run the same StateModel →
+Recorder → writer at full speed with original timestamps. Idempotent (Influx overwrites
+identical series + timestamp), so it can be re-run after a decoder or event-logic fix.
+Needs no serial port and can run beside the service. The raw logs since v0.1.0 become
+history the day Influx is enabled.
+
+**This installation (decided 2026-10-28).** InfluxDB OSS 1.13.1 at
+`https://iot.dynowski.com:8086` (LAN, 192.168.100.12), authentication off, database
+`navien`. The user creates the database and RPs; Grafana's datasource is added by the user,
+who supplies its name; dashboards are JSON files the user imports. Gas price default
+$1.50/therm (rough US residential average) until the user's tariff is known.
+
+**Retention.** Two retention policies, created by the operator (statements in
+`grafana/README.md`): samples (`navien_unit`, `navien_cascade`) in `samples_90d`
+(`retention_policy`), everything else in `forever`, the database default
+(`rollup_retention_policy`). A backfill point older than its RP is rejected by Influx
+("points beyond retention policy"); the writer counts those as dropped, not as errors.
+Volume: ~260 000 sample points/day (≈ 5 M field values); TSM compression makes the many
+constant fields cheap, so expect tens of MB/day rather than hundreds.
+`influx.sample_every_s` (default 1) can thin samples if that is too much; events and
+rollups are always computed from every cycle.
+
+**Grafana.** Dashboards as JSON in `grafana/dashboards/`, with provisioning examples
+(`grafana/provisioning/` datasource + dashboard provider) and setup notes. Datasource
+InfluxDB, query language InfluxQL, referenced by a `${DS_NAVIEN}` input so the files also
+import through the UI. Stored data is metric; panels convert in the query (°F, gallons,
+GPM, therms, BTU/h), matching the web dashboard's defaults. A `price_per_therm` dashboard
+variable drives cost panels. Time zone: browser. Planned dashboards:
+
+1. **Overview** — today and 7-day stat tiles (gallons, therms, cost, recirc share of gas,
+   draws, showers, slave call-ins), daily stacked bars of water and gas (DHW / recirc),
+   last 24 h temperatures and flow.
+2. **Hot water** — usage by hour of day × day (heatmap), draw table, duration and volume
+   histograms, time-to-hot trend, showers per day.
+3. **Gas & cost** — therms and cost per day/month by purpose, gas per gallon, the
+   delivered-heat vs reported-gas ratio (flow × ΔT ÷ gas; a consistency check, not a
+   measured efficiency), cold-supply temperature trend.
+4. **Recirculation** — runs/day, duration, interval between runs (loop heat-loss proxy),
+   gas and cost per run and per day, per unit.
+5. **Cascade & equipment** — runtime, burns and short burns per unit, ignition time trend,
+   failed ignitions, stage-2 events with their trigger flow/capacity, peak combined demand,
+   errors, outlet stability (outlet − setpoint during long draws).
+6. **Detail** — per-cycle samples over hours: temperatures, flow, gas, burner stage as a
+   state timeline, the `0x41` unknowns, bus health.
+
+Dashboards are checked by a test that parses every JSON file and verifies each query only
+references measurements, fields and tags the writer produces (from one schema table in
+`influx.py`), so a rename cannot silently blank a panel. No Grafana runs on the Pi; the
+visual check is the user's.
 
 ### 1.11 Deployment: a Debian package per release
 
@@ -362,15 +479,43 @@ view shows the `0x41` `[26..28]` bytes changing live.
 **Done when:** charts on a phone stay smooth over a 5-minute window and recover correctly
 after a reconnect.
 
-### Phase 4 — InfluxDB 1.x
+### Phase 4 — InfluxDB 1.x, events, Grafana (§1.10)
 
-1. `navien/influx.py`, config section, health reporting.
-2. Tests: line-protocol formatting (escaping, ints vs floats vs bools), batching, backoff,
-   overflow drop-oldest using a fake HTTP server.
-3. Example InfluxQL queries and continuous queries documented here.
+Three sub-phases, each reviewed and released like 3a/3b.
 
-**Done when:** a 24 h run lands ~86 400 points per series in Influx, and an Influx outage of
-10 minutes loses nothing (queue absorbs it) while the dashboard is unaffected.
+**4a — Writer and samples (v0.5.0).**
+1. `navien/influx.py`: line protocol, schema table, batching writer, backoff, drop policy,
+   health in `/api/health`; `[influx]` config additions (`rollup_retention_policy`,
+   `timeout_s`, `sample_every_s`).
+2. `navien_unit` (with mode-split fields), `navien_cascade`, `navien_counters`, `navien_bus`.
+3. Tests: line-protocol escaping and types (int `i`, float, bool, string), batching, backoff,
+   4xx vs 5xx handling, overflow drop order, all against a fake HTTP server.
+4. `grafana/README.md`: database and retention-policy statements, example InfluxQL.
+
+**Done when:** a 24 h run lands one sample per cycle per series; a 10-minute Influx outage
+loses nothing and leaves the web dashboard unaffected; a longer one drops oldest samples
+only, counted in `/api/health`.
+
+**4b — Events, hourly rollups, backfill (v0.6.0).**
+1. `navien/events.py` (Recorder): the event types and hourly fields of §1.10, `[events]`
+   config (`debounce_s`, `short_burn_s`, `hot_band_c`).
+2. `navien-dash backfill` (and `python -m navien backfill`).
+3. Tests against `captures/` and a committed excerpt of the 2026-10-28 service log (the
+   18:23 two-unit draw and a recirc run; small, so it can live in `tests/data/`): expected
+   events, volumes and gas within tolerance, debounce, partial-hour overwrite, backfill
+   idempotence.
+
+**Done when:** a backfill of the raw logs since v0.1.0 gives event counts and daily
+totals that match a direct analysis of the same logs (as in the 2026-10-28 analysis:
+24 recirc runs, 47 % recirc share for that afternoon), and re-running it changes nothing.
+
+**4c — Grafana dashboards (v0.7.0, tag `phase-4`).**
+1. The six dashboards of §1.10 as JSON, provisioning examples, setup notes in
+   `grafana/README.md`; release assets include the dashboard files.
+2. Test: dashboards reference only schema fields.
+
+**Done when:** the user imports the dashboards into their Grafana and checks each against
+the web dashboard and a hand calculation for one day.
 
 ### Parallel reverse-engineering track (not phase-gated)
 
@@ -383,7 +528,8 @@ comparison. Findings update `PROTOCOL_NOTES.md` and the field table in `decode.p
 ## 3. Out of scope
 
 TX / control of any kind · authentication · HA / MQTT · persistence of the in-memory
-history · managing the Influx server or Grafana · changes to `navien-capture.py` ·
+history · running or administering the Influx and Grafana servers (we ship dashboard
+files and setup statements, not server config) · changes to `navien-capture.py` ·
 an offline analyzer tool.
 
 ## 4. Changelog
@@ -444,3 +590,9 @@ an offline analyzer tool.
   Decoder: the `0x41` frame is cascade-wide (PROTOCOL_NOTES §4.4.1, from the first
   service-log slave-firing and recirculation events); field `active` (wrong once two units
   draw) replaced by `units_in_demand`, plus `recirc` and `stage2`.
+- 2026-10-28 — Phase 4 expanded (§1.10, §2 Phase 4): besides per-cycle samples, the
+  service detects events (draws, recirc runs, burns, stage-2, errors) and writes hourly
+  rollups, so day/week/month totals are plain `SUM()`s and need no continuous queries;
+  mode-split gas/flow fields make integrals exact; a backfill command loads the raw logs
+  through the same code; Grafana dashboards (six) ship as JSON with a schema-consistency
+  test. Split into 4a (writer, v0.5.0), 4b (events/backfill, v0.6.0), 4c (Grafana, v0.7.0).

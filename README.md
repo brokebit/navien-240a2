@@ -27,8 +27,9 @@ phased plan are in [`PLAN.md`](PLAN.md).
   port, at real time or faster.
 - **Debian package** with a hardened systemd service and a udev rule.
 
-InfluxDB 1.x export is the next phase and isn't built yet. The `[influx]` config section
-already exists but does nothing.
+InfluxDB 1.x export (with detected events such as showers and recirculation runs, hourly
+totals, and Grafana dashboards) is the next phase and isn't built yet. The `[influx]`
+config section already exists but does nothing.
 
 ## Hardware
 
@@ -144,7 +145,9 @@ docs/              README images
 | 2: WebSocket push | v0.2.0 | done |
 | 3a: text dashboard and debug view | v0.3.0 | done |
 | 3b: charts | v0.4.0 | done |
-| 4: InfluxDB 1.x | v0.5.0 | next |
+| 4a: InfluxDB 1.x writer | v0.5.0 | next |
+| 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | planned |
+| 4c: Grafana dashboards | v0.7.0 | planned |
 
 Several bytes are still undecoded, notably the master→slave `0x41` frame's `[26..28]` and
 the gas-frame counters. See `PROTOCOL_NOTES.md` §6. Community decodes for single-unit

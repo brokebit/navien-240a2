@@ -10,7 +10,7 @@ this file plus `PROTOCOL_NOTES.md` is the handoff. Read `PROTOCOL_NOTES.md` befo
 touching the decoder.
 
 The current build effort is a live dashboard service (FastAPI, WebSockets, raw logging,
-later InfluxDB 1.x). Its architecture, decisions and phased development plan are in
+later InfluxDB 1.x with event detection and Grafana dashboards). Its architecture, decisions and phased development plan are in
 `PLAN.md`; read it before writing service or dashboard code.
 
 ## Hardware
@@ -167,7 +167,7 @@ the dev tree or `navien-capture.py` against the port.
 ## Next steps
 
 Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebSocket →
-3a text dashboard → 3b charts → 4 InfluxDB). Each phase is reviewed with the user before
+3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana). Each phase is reviewed with the user before
 the next starts.
 
 Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):
