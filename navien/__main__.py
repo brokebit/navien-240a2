@@ -17,6 +17,7 @@ from pathlib import Path
 
 from . import config as config_mod
 from .service import Service
+from .version import VERSION
 
 log = logging.getLogger("navien")
 
@@ -104,7 +105,7 @@ def main(argv=None) -> int:
         cfg.serial.port = args.port
     if args.http_port:
         cfg.http.port = args.http_port
-    log.info("config: %s", config_path or "built-in defaults")
+    log.info("navien-dash %s, config: %s", VERSION, config_path or "built-in defaults")
 
     service = Service(cfg, replay=args.replay, speed=args.speed, loop_replay=args.loop)
     if args.headless:

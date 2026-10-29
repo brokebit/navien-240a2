@@ -121,6 +121,7 @@ function onMessage(msg) {
     case "hello":
       app.hello = msg;
       $("foot-source").textContent = msg.source;
+      if (msg.version) $("foot-version").textContent = `navien-dash ${msg.version}`;
       $("chart-window").textContent = fmtAge(msg.history_seconds);
       break;
     case "history":

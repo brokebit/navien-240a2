@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .decode import fields_table
 from .service import Service
+from .version import VERSION
 from .ws import API_VERSION, WsSession
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -53,7 +54,7 @@ def create_app(service: Service) -> FastAPI:
 
     @app.get("/api", tags=["meta"], summary="API index")
     async def index():
-        return {"name": "navien", "api_version": API_VERSION,
+        return {"name": "navien", "version": VERSION, "api_version": API_VERSION,
                 "endpoints": ["/api/state", "/api/history", "/api/frames", "/api/fields",
                               "/api/health", "/ws", "/docs"]}
 

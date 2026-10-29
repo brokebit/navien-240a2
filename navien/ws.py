@@ -26,6 +26,7 @@ import logging
 from typing import Awaitable, Callable
 
 from .service import Service
+from .version import VERSION
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +113,8 @@ class WsSession:
 
     def _hello(self) -> dict:
         cfg = self.service.cfg
-        return {"type": "hello", "api_version": API_VERSION, "source": self.service.source_desc,
+        return {"type": "hello", "version": VERSION, "api_version": API_VERSION,
+                "source": self.service.source_desc,
                 "history_seconds": cfg.state.history_seconds,
                 "topics": sorted(CLIENT_TOPICS)}
 

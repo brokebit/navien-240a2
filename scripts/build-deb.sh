@@ -43,6 +43,7 @@ mkdir -p "$OPT/app" "$ROOT/dist"
 
 # ---------------------------------------------------------------- application
 cp -r navien "$OPT/app/"
+echo "VERSION = \"$VERSION\"" > "$OPT/app/navien/_version.py"
 find "$OPT/app" -name __pycache__ -type d -prune -exec rm -rf {} +
 
 # ---------------------------------------------------------------- virtualenv
@@ -61,6 +62,9 @@ find "$OPT" -name __pycache__ -type d -prune -exec rm -rf {} +
 # since the .pth points at the final install path).
 PYTHONPATH="$OPT/app" PYTHONDONTWRITEBYTECODE=1 "$OPT/venv/bin/python" -c \
     'import navien.api, navien.service, uvicorn, serial; print("imports ok")'
+GOT=$(cd / && PYTHONPATH="$OPT/app" PYTHONDONTWRITEBYTECODE=1 "$OPT/venv/bin/python" -c \
+    'from navien.version import VERSION; print(VERSION)')
+[ "$GOT" = "$VERSION" ] || { echo "staged package reports version $GOT, expected $VERSION" >&2; exit 1; }
 CAPTURE=$(ls captures/*.raw 2>/dev/null | head -1 || true)
 if [ -n "$CAPTURE" ]; then
     CYCLES=$(PYTHONPATH="$OPT/app" PYTHONDONTWRITEBYTECODE=1 "$OPT/venv/bin/python" -m navien \

@@ -157,6 +157,7 @@ def test_websocket_route(live_client):
     with live_client.websocket_connect("/ws") as ws:
         hello = ws.receive_json()
         assert hello["type"] == "hello" and hello["history_seconds"] == 300
+        assert hello["version"]
         assert ws.receive_json()["type"] == "history"
         seqs = []
         while len(seqs) < 5:

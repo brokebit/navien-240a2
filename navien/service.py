@@ -20,6 +20,7 @@ from .influx import InfluxWriter
 from .rawlog import RawLogger
 from .source import Reader, ReplaySource, SerialSource
 from .state import StateModel
+from .version import VERSION
 
 log = logging.getLogger(__name__)
 
@@ -216,6 +217,7 @@ class Service:
             }
         return {
             "status": "ok" if bus_alive else "no_data",
+            "version": VERSION,
             "bus_alive": bus_alive,
             "last_frame_age_s": age,
             "source": self.source_desc,

@@ -88,6 +88,8 @@ def test_health(replay_client):
     assert h["bus"]["frames"] == 420 and h["bus"]["checksum_fail"] == 0
     assert h["reader"]["resyncs"] == 0 and h["rawlog"] is None
     assert h["history_cycles"] > 0 and h["bus"]["cycle_ms"] is not None
+    assert h["version"] and h["version"] != "unknown"
+    assert replay_client.get("/api").json()["version"] == h["version"]
 
 
 def test_missing_serial_port_is_reported_not_fatal(tmp_path):

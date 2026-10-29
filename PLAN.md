@@ -670,3 +670,7 @@ an offline analyzer tool.
   logs one `status (60 s): …` line a minute with counters since the previous one (cycles,
   frames, bad checksums, resyncs, Influx points written / queued / dropped / rejected, web
   clients), so a hung service is visible in the journal (v0.7.2).
+- 2026-10-29 — The version is shown in the web dashboard's footer and reported by `/api`,
+  `/api/health`, the WebSocket hello and the startup log line. `scripts/build-deb.sh` writes
+  it into the package (`navien/_version.py`, gitignored); a dev tree derives it from
+  `git describe` (`navien/version.py`) (v0.7.3).

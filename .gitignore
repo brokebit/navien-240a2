@@ -7,3 +7,4 @@ raw/
 /navien.toml
 build/
 dist/
+/navien/_version.py
