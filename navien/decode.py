@@ -114,20 +114,24 @@ GAS_FIELDS = [
 
 # Master -> slave 0x41 frame (PROTOCOL_NOTES §4.4): the master's own state, one cycle late.
 CASCADE_FIELDS = [
+    # Master -> slave, once per cycle: cascade-wide values, not the master's own state
+    # (PROTOCOL_NOTES §4.3). Temperatures, capacity and flow are over the units in DHW demand.
     F("consumption", 8, "bool", mask=0x20),
-    F("status", 9, note="01 idle, 05 demand, 07 flame"),
+    F("status", 9, note="bits: 01 power, 02 a burner lit, 04 DHW demand, 08 recirc"),
     F("demand", 9, "bool", mask=0x04),
-    F("flame", 9, "bool", mask=0x02),
+    F("flame", 9, "bool", mask=0x02, note="any unit's burner, incl. the slave's"),
+    F("recirc", 9, "bool", mask=0x08),
     F("set_c", 11, scale=0.5, unit="°C"),
-    F("outlet_c", 12, scale=0.5, unit="°C", note="holds last draw's value when idle"),
-    F("inlet_c", 13, scale=0.5, unit="°C", note="holds last draw's value when idle"),
-    F("active", 16, "bool", mask=0x01),
-    F("capacity_pct", 17, scale=0.5, unit="%"),
-    F("flow_lpm", 18, scale=0.1, unit="L/min"),
+    F("outlet_c", 12, scale=0.5, unit="°C", note="mean of units in demand; holds when idle"),
+    F("inlet_c", 13, scale=0.5, unit="°C", note="mean of units in demand; holds when idle"),
+    F("units_in_demand", 16, note="0 idle/recirc, 1, 2"),
+    F("capacity_pct", 17, scale=0.5, unit="%", note="mean of units in demand"),
+    F("flow_lpm", 18, scale=0.1, unit="L/min", note="total of units in demand"),
+    F("stage2", 20, "bool", mask=0x02, note="slave called in; set ~2 s before its valve opens"),
     F("toggle_25", 25, "bool", mask=0x04, note="toggles ~13 s, unknown"),
-    F("x26", 26, note="unknown A"),
-    F("x27", 27, note="unknown B"),
-    F("x28", 28, note="unknown C, always x26 + 40"),
+    F("x26", 26, note="= 153 - [13] (min 60) at setpoint 51.5 °C; unknown"),
+    F("x27", 27, note="function of x26, rule depends on units_in_demand; unknown"),
+    F("x28", 28, note="always x26 + 40"),
 ]
 
 FIELDS = {"water": WATER_FIELDS, "gas": GAS_FIELDS, "cascade": CASCADE_FIELDS}

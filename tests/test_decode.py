@@ -1,4 +1,5 @@
 from navien.decode import FIELDS, decode, fields_table
+from navien.protocol import Frame, seed_for_src
 
 from conftest import CAPTURES, parse_file
 
@@ -57,6 +58,18 @@ def test_cascade_frame(main_frames):
     for d in decoded(main_frames, "50>51/10"):
         assert d["x28"] == d["x26"] + 40
         assert d["status"] in (0x01, 0x05, 0x07)
+
+
+def test_cascade_frame_both_units_in_demand():
+    # 2026-10-28 18:24:00 CDT, service raw log: master 9.5 L/min at 34 %, slave 9.1 L/min at 40 %
+    raw = bytes.fromhex("F7 02 50 51 10 22 41 00 20 07 00 67 68 2F 00 00 02 4A BA 00 03 00 00 20"
+                        " 02 00 6A 2B 92 0A 0E 00 06 02 00 00 00 C2 00 00 BF 75")
+    frame = Frame(ts=0.0, raw=raw, seed=seed_for_src(raw[2]))
+    assert frame.checksum_ok
+    d = decode(frame)
+    assert d["units_in_demand"] == 2 and d["stage2"] and d["demand"] and d["flame"]
+    assert (d["flow_lpm"], d["capacity_pct"]) == (18.6, 37.0)
+    assert d["x26"] == 153 - raw[13] and d["x28"] == d["x26"] + 40
 
 
 def test_undecoded_kinds(main_frames):

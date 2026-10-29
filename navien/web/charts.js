@@ -56,11 +56,13 @@ function compact(v, step) {
 
 function timeTicks(t0, t1, width) {
   const steps = [15, 30, 60, 120, 300, 600, 900, 1800, 3600];
-  const maxTicks = Math.max(2, Math.floor(width / 70));
+  // At most 8 ticks: wide charts would otherwise pick 30 s steps, which an HH:MM label
+  // can't tell apart. Sub-minute steps (short windows only) get seconds in their labels.
+  const maxTicks = Math.min(8, Math.max(2, Math.floor(width / 70)));
   const step = steps.find((s) => (t1 - t0) / s <= maxTicks) || 3600;
   const out = [];
   for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) out.push(t);
-  return out;
+  return { ticks: out, seconds: step < 60 };
 }
 
 const clock = (t, seconds = false) => new Date(t * 1000).toLocaleTimeString(undefined,
@@ -138,9 +140,10 @@ class Chart {
     this.x = (t) => M.left + ((t - this.t0) / (this.t1 - this.t0)) * this.plotW;
     // x axis: baseline + clock ticks
     const g = svg("g", { class: "axis" }, this.svg);
-    for (const t of timeTicks(this.t0, this.t1, this.plotW)) {
+    const tt = timeTicks(this.t0, this.t1, this.plotW);
+    for (const t of tt.ticks) {
       const x = this.x(t);
-      svg("text", { x, y: M.top + this.plotH + 16, "text-anchor": "middle" }, g).textContent = clock(t);
+      svg("text", { x, y: M.top + this.plotH + 16, "text-anchor": "middle" }, g).textContent = clock(t, tt.seconds);
     }
     this.hoverEl = svg("g", { class: "hover" }, this.svg);
   }

@@ -438,3 +438,9 @@ an offline analyzer tool.
   capacity = kcal/h ÷ 504), so only gas rate is charted; operating capacity (water[17]) is
   not charted until its meaning is clearer. JS checked statically only.
 
+- 2026-10-28 — v0.4.1: README (with dashboard screenshot in `docs/`), MIT licence, example
+  config comment fixed. Charts: time axes capped at 8 ticks, so wide charts (the burner
+  band) no longer pick 30 s steps whose HH:MM labels repeat; sub-minute steps show seconds.
+  Decoder: the `0x41` frame is cascade-wide (PROTOCOL_NOTES §4.4.1, from the first
+  service-log slave-firing and recirculation events); field `active` (wrong once two units
+  draw) replaced by `units_in_demand`, plus `recirc` and `stage2`.

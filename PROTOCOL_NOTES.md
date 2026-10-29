@@ -178,8 +178,11 @@ vectors show both varying on a slave, so they are not role markers. Use the sour
 ### 4.4 Master → slave frame — `50→51`, dir 0x10, len 34, type `0x41` (measured)
 
 The ESPHome project (PR #65) treats frames with this shape as the master relaying the
-*sub-unit's* data. On this installation the content is the **master's own state from the
-previous cycle**, apparently pushed to the slave for cascade coordination.
+*sub-unit's* data. On this installation it carries **cascade-wide values**: the number of
+units in DHW demand, their total flow and their mean capacity, inlet and outlet, one cycle
+late. With only the master drawing, as in the first capture, these equal the master's own
+values, which is why this section first read it as "the master's state from the previous
+cycle". The 2026-10-28 service logs (§4.4.1) show the difference once the slave joins.
 
 Upstream's current code ignores every dir-0x10 frame not from `0x0F` (commit `0add04d`
 "…observed in cascade setup for 240A2 between navien units"), so it decodes none of this.
@@ -195,24 +198,24 @@ holds on a second installation**.
 | 0 | 6 | `41` | packet type |
 | 1 | 7 | `00` | |
 | 2 | 8 | `00`/`20` | consumption flag — mirrors master water[2], one cycle late |
-| 3 | 9 | `01`/`05`/`07` | status: `01` idle, `05` demand (stages 20, 29, 2C, 2D, 3C, 46), `07` combustion (stage 33). Bits: `0x04` demand, `0x02` flame |
+| 3 | 9 | `01`/`03`/`05`/`07`/`0B` | status bits: `0x01` power, `0x02` a burner is lit (also set, as `03`, while only the slave burns), `0x04` DHW demand, `0x08` recirculation (`0B` = recirc + flame) |
 | 4 | 10 | `00` | |
 | 5 | 11 | `67` | setpoint °C×2 |
-| 6 | 12 | VAR | outlet °C×2 — equals master water[6] while flowing; **holds the last draw's value when idle** (52.5 °C held while live outlet read 44.5 °C) |
+| 6 | 12 | VAR | outlet °C×2 — mean over the units in DHW demand (= master's when only it draws); **holds the last draw's value when idle** (52.5 °C held while live outlet read 44.5 °C) |
 | 7 | 13 | VAR | inlet °C×2 — same behaviour |
 | 8–9 | 14–15 | `00` | |
-| 10 | 16 | `00`/`01` | 1 while consumption, one cycle late |
-| 11 | 17 | VAR 0–24 | capacity %×2 — same values as master water[11] |
-| 12 | 18 | VAR 0–48 | flow L/min×10 — same as master water[12] |
+| 10 | 16 | `00`/`01`/`02` | **number of units in DHW demand** (water[8] = `20`), one cycle late. `00` during recirculation even with burners lit |
+| 11 | 17 | VAR | capacity %×2 — mean over the units in demand |
+| 12 | 18 | VAR | flow L/min×10 — **total** over the units in demand |
 | 13 | 19 | `00` | |
-| 14 | 20 | `01` | |
+| 14 | 20 | `01`/`03` | bit `0x02` = **slave called in**: set 2 s before the slave's flow started (18:23:23), cleared ~1 min after both units stopped. One event so far |
 | 15–16 | 21–22 | `00` | |
 | 17 | 23 | `20` | |
 | 18 | 24 | `02` | |
 | 19 | 25 | `00`/`04` | **toggling bit**, ~13 s period, flips in the same cycle as slave water[19] |
-| 20 | 26 | VAR 61→93 | **unknown A** — rose almost monotonically over the minute (dip at ignition) |
-| 21 | 27 | VAR 30→42 | **unknown B** — same shape |
-| 22 | 28 | VAR 101→133 | **unknown C** — always exactly A + 40 |
+| 20 | 26 | VAR 60–110 | **A** = 153 − [13], floored at 60 (§4.4.1). Only setpoint 51.5 °C (`67`) seen, so 153 may be setpoint×2 + 50 |
+| 21 | 27 | VAR 30–48 | **B** — a function of A whose rule depends on [16] (§4.4.1) |
+| 22 | 28 | VAR 100–150 | **C** — always exactly A + 40 |
 | 23 | 29 | `0A` | |
 | 24 | 30 | `0E` | |
 | 25 | 31 | `00` | |
@@ -222,11 +225,37 @@ holds on a second installation**.
 | 31 | 37 | `C2` | |
 | 32–33 | 38–39 | `00` | |
 
-Hypothesis for A/B/C: cascade load or demand figures the master uses to decide when to
-stage the slave in. They rose as inlet temperature fell (i.e. as required ΔT grew) and kept
-rising through post-purge, so they are not simply burner output. B ≈ 72 − inlet °C loosely
-fits but not tightly. A capture in which the slave is brought in is needed; look for a
-threshold crossing in A or C in the cycle before the slave's stage leaves `0x14`.
+#### 4.4.1 Slave firing and recirculation (service raw logs, 2026-10-28 15:43–19:10 CDT)
+
+Source: `/var/lib/navien-dash/raw/navien_20261028T20Z` … `navien_20261029T00Z`, 12 377
+`0x41` frames, 0 checksum failures. All statements below hold for every frame except the
+one-cycle lag at transitions.
+
+**Two units in DHW demand (18:23:05–18:30:13).** Master demand started at 18:23:05 and its
+flow rose to 16.8 L/min (capacity 56 %). At 18:23:23 `0x41`[20] went `01`→`03`; at 18:23:25
+the slave reported flow (stage `14`, 2.8 L/min) and the master's flow fell. Within ~5 s the
+flow was split evenly (≈9.5 / 9.5 L/min). Slave stages: `14` → `20` → `2C` → `2D` → `33`, the
+same sequence as the master's. From then on `0x41`[16] = 2, [18] = sum of both flows,
+[17]/[12]/[13] = mean of both units' capacity/outlet/inlet. At the end the master stopped one
+cycle before the slave, and both went straight from `3C` into a recirculation run (18:30:14).
+
+**A, B, C.** Across all frames, A = `max(60, 153 − [13])` and C = A + 40. A is therefore not a
+hidden load figure but derived from the (mixed) inlet temperature; with the setpoint fixed at
+51.5 °C (`67` = 103) every frame fits both "153 − inlet" and "setpoint×2 − inlet×2 + 50", i.e.
+ΔT×2 + 50. A setpoint change would separate the two. B follows A with one of two rules:
+- [16] ≤ 1: `B = (3A + 4) // 8 + 7` (≈ 0.375·A + 7.5)
+- [16] = 2: `B = A // 2 − 10`
+
+The rule switched in the same cycle as [16] (18:23:25 and 18:30:13). Meaning still unknown;
+possibly a per-unit firing target the slave reads.
+
+**Recirculation (water[8] = `08`).** 16 runs on the master and 8 on the slave, each 1–3 min,
+at a fixed flow per unit (master ≈15.2 L/min, slave ≈13.5 L/min), with inlet reading warm
+loop water (37–46 °C). The slave's runs repeat every ~31.5 min (15:53, 16:24, 16:56, 17:28,
+18:00, …); the master's mostly start right after a DHW draw ends. This is consistent with
+each unit running its own temperature-triggered recirculation, and confirms the upstream
+enum value `08` = DHW recirculating. During recirc `0x41`[16] = 0 and [9] = `0B`. The
+screenshot of the dashboard at 19:00–19:02 shows one of these, not a tap draw.
 
 ### 4.5 Master `0x44` frame — `50→50`, dir 0x10, len 34 (measured)
 
@@ -301,7 +330,10 @@ The slave never left `0x14` and reported 0 kcal throughout.
 
 ## 6. Open questions, ranked
 
-1. `0x41`[20..22] (A/B/C) — likely the cascade hand-off logic. Needs a slave-firing capture.
+1. `0x41`[26..28] (A/B/C) — A and C are now explained by inlet temperature (§4.4.1), B by A
+   plus the number of units in demand; what they *mean* is open. A setpoint change would
+   test whether A = setpoint×2 − inlet×2 + 50. What triggers `0x41`[20] / slave staging
+   (master capacity 56 % and 16.8 L/min at the one event seen) needs more two-unit draws.
 2. The `0x04` toggling bit (slave water[19] / `0x41`[19]) — ~13 s period, not stage-linked.
    Recirc pump? Heartbeat? Capture a recirculation event and a long idle period.
 3. Gas counters (frame [24..37]: cumulative gas, days since install, DHW use count,

@@ -2,7 +2,7 @@
 # Run: venv/bin/python -m navien --config navien.toml
 
 [serial]
-port = "/dev/navien"          # udev symlink from deploy/99-navien.rules (or /dev/ttyUSB0)
+port = "/dev/navien"          # udev symlink from packaging/99-navien-dash.rules (or /dev/ttyUSB0)
 baud = 19200
 
 [http]

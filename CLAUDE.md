@@ -42,7 +42,7 @@ later InfluxDB 1.x). Its architecture, decisions and phased development plan are
 
   | t (ms) | frame | payload type byte | notes |
   |---|---|---|---|
-  | 0 | `50→51` dir 10, len 34 | `0x41` | master → slave: master's own state, one cycle late |
+  | 0 | `50→51` dir 10, len 34 | `0x41` | master → slave: cascade totals (units in demand, total flow, mean temps), one cycle late |
   | ~60 | `51→50` dir 90, len 34 | `0x42` | slave water |
   | ~110 | `51→0F` dir 90, len 42 | `0x45` | slave gas (occasionally sent twice, water skipped) |
   | ~210 | `50→52` dir 10, len 3 | `0x40` | **sys_type `0x13`**, constant `40 00 04`; poll of absent unit 2? (PROTOCOL_NOTES §4.6). The capture script drops it |
@@ -77,11 +77,13 @@ version (`1B` → 2.7) · `[14]` setpoint · `[15]` outlet · `[16]` inlet (all 
 `[24..25]` cumulative gas ×0.1 m³ · `[28..29]` days since install · `[30..31]` DHW use count ·
 `[36..37]` operating hours — the counters read implausibly low, **unverified** · `[46]` 01 master / 00 slave.
 
-**Master→slave `0x41` frame (len 34):** same layout as water for `[8]`, `[11]`, `[12]`, `[13]`,
-`[17]`, `[18]` (temps freeze at last-draw values when idle) · `[9]` = 01 idle / 05 demand / 07 flame ·
-`[16]` 00/01 active · `[25]` bit `0x04` toggles ~every 13 s (unknown) ·
-`[26] [27] [28]` three slowly varying bytes, `[28] == [26] + 40`, rose 61/30/101 → 93/42/133
-over one minute as inlet temp fell — **unknown, probably cascade load/demand; top priority to decode.**
+**Master→slave `0x41` frame (len 34):** cascade-wide values, one cycle late (PROTOCOL_NOTES §4.4.1):
+`[8]` mode, `[11]` setpoint · `[12]`/`[13]` mean outlet/inlet and `[17]` mean capacity of the units in
+DHW demand (freeze when idle) · `[16]` **number of units in DHW demand** (0 during recirc) ·
+`[18]` **total** flow · `[9]` bits 01 power / 02 a burner lit / 04 DHW demand / 08 recirc ·
+`[20]` bit `0x02` slave called in · `[25]` bit `0x04` toggles ~every 13 s (unknown) ·
+`[26]` = max(60, 153 − `[13]`) at setpoint 51.5 °C, `[28] == [26] + 40`, `[27]` a function of `[26]`
+whose rule depends on `[16]` — derivations known, **meaning unknown**.
 
 ## Files
 
@@ -167,10 +169,11 @@ the next starts.
 
 Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):
 
-1. Capture 3–5 min with enough demand to make the **slave fire** (two showers / tub fill),
-   logging wall-clock tap open/close times. Needed for: slave stage sequence, the `0x41`
-   frame at hand-off, meaning of `[26..28]`.
-2. Capture a recirculation event (HotButton or schedule) to pin `[8]` bit `0x08`, `[33]`, `[25]`.
+1. ~~Slave firing~~ — done from the service log (2026-10-28 18:23, PROTOCOL_NOTES §4.4.1).
+   Still open: what triggers staging, and the meaning of `0x41`[26..28]; a setpoint change
+   would test `[26]` = setpoint×2 − inlet×2 + 50.
+2. ~~Recirculation~~ — water `[8]` = `08` confirmed (both units, ~30 min cycle). Still open:
+   `[33]`, `[25]`.
 3. Compare gas `[24]` and the version bytes against the installer-menu display values.
 4. Only then, and only when the user asks: NaviLink-present announce packet
    (`F7 02 0F 50 10 03 4A 00 01 + cs`) as a first TX experiment. Out of scope for PLAN.md.
