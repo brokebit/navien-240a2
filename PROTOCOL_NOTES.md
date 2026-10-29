@@ -249,7 +249,8 @@ hidden load figure but derived from the (mixed) inlet temperature; with the setp
 The rule switched in the same cycle as [16] (18:23:25 and 18:30:13). Meaning still unknown;
 possibly a per-unit firing target the slave reads.
 
-**Recirculation (water[8] = `08`).** 16 runs on the master and 8 on the slave, each 1–3 min,
+**Recirculation (water[8] = `08`).** 10 runs on the master and 7 on the slave (15:43–19:10;
+an earlier count of 16 + 8 was wrong), each 1–3 min,
 at a fixed flow per unit (master ≈15.2 L/min, slave ≈13.5 L/min), with inlet reading warm
 loop water (37–46 °C). The slave's runs repeat every ~31.5 min (15:53, 16:24, 16:56, 17:28,
 18:00, …); the master's mostly start right after a DHW draw ends. This is consistent with
@@ -305,18 +306,25 @@ the NavienManager list this note was first written from, and **disagrees on `0x2
 | `28` | pre-purge 1 | — | no |
 | `29` | pre-purge 2 | pre-purge | yes |
 | `2A` | pre-ignition | — | no |
-| `2B` | ignition | ignition | no |
+| `2B` | ignition | ignition | yes (service log) |
 | `2C` | flame on | flame on | yes |
 | `2D` | ramp up | ramp-up | yes |
 | `33` | active combustion | active combustion | yes |
-| `34` | water adjustment valve operation | water adjustment | no |
+| `34` | water adjustment valve operation | water adjustment | yes (service log; alternates with `33` in long burns) |
 | `3C` | flame off | flame off | yes |
 | `46` | post-purge 1 | post-purge 1 | yes |
-| `47` | post-purge 2 | post-purge 2 | no |
+| `47` | post-purge 2 | post-purge 2 | yes (service log) |
 | `48` | shutting down | — | no |
-| `49` | DHW wait / set-point match | DHW wait | no |
+| `49` | DHW wait / set-point match | DHW wait | yes (service log; ~80 s after each burn, then `14`) |
 
 Use the upstream names; `0x20` → "startup" fits what we see (first cycle after flow begins).
+
+Burn sequence in the 2026-10-28 service log (18 burns): `14` → `20` → `29` (→ `2B`) → `2C` →
+`2D` → `33`/`34` … → `3C` → `46` → `47` → `49` (~80 s) → `14`. A new demand during post-purge
+or DHW wait re-ignites from there (`46`/`49` → `29`/`2B`) without passing standby. One
+aborted start: master 18:18:29, `20` → `3C` after 1 s with no flame, post-purge, then
+`29` → `2C` 10 s later. `events.py` counts `20`–`34` as a burn and flags a burn without
+flame as `failed`.
 
 `0x49` (DHW wait / set-point match) first seen 2026-10-28 15:24 local on the **slave**: no
 flow, heating mode idle, outlet 49 °C / inlet 45 °C, up from 41.5 / 41 °C at 15:13. Nothing

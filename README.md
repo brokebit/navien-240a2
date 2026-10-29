@@ -28,8 +28,12 @@ phased plan are in [`PLAN.md`](PLAN.md).
 - **Debian package** with a hardened systemd service and a udev rule.
 - **InfluxDB 1.x export:** per-second samples of both units and the cascade, plus counters
   and bus health, batched and buffered through outages. Setup in
-  [`grafana/README.md`](grafana/README.md). Detected events (showers, recirculation runs),
-  hourly totals and Grafana dashboards are the next steps.
+  [`grafana/README.md`](grafana/README.md).
+- **Events and hourly totals:** hot-water draws (volume, gas, peak flow, time to hot, whether
+  the second unit was called in), recirculation runs, burner cycles (ignitions, short and
+  failed starts), staging and errors, plus hourly litres, kcal and counts split by purpose.
+- **Backfill:** `navien-dash backfill` loads the raw logs into Influx with the same event
+  detection, so history starts with the first raw log, not the day Influx was enabled.
 
 ## Hardware
 
@@ -102,6 +106,10 @@ sudo systemctl start navien-dash
 | `--headless` | no web server; print cycles |
 | `-v` | verbose logging |
 
+`python -m navien backfill [--from WHEN] [--to WHEN] [--dry-run] [PATH…]` (installed:
+`navien-dash backfill`) loads raw logs into InfluxDB; see
+[`grafana/README.md`](grafana/README.md) §6.
+
 The frontend is plain ES modules in `navien/web/`, with no build step and no CDN. The
 charts are hand-written SVG in `charts.js`.
 
@@ -125,9 +133,11 @@ in the `navien/ws.py` docstring.
 ## Repository layout
 
 ```
-navien/            the service: protocol, decode, state, source, rawlog, hub, service, api, ws
+navien/            the service: protocol, decode, state, source, rawlog, hub, service, api, ws,
+                   influx, events, backfill
 navien/web/        dashboard (HTML, CSS, ES modules)
-tests/             pytest suite (capture-based tests need the local captures/)
+tests/             pytest suite (capture-based tests need the local captures/;
+                   tests/data/ holds a 15-minute raw log excerpt)
 packaging/         systemd unit, udev rule, sysusers, default config, maintainer scripts
 scripts/           build-deb.sh, release.sh (GitHub release with the .deb)
 navien-capture.py  standalone receive-only sniffer (proof of concept)
@@ -147,8 +157,8 @@ grafana/           InfluxDB/Grafana setup, example queries (dashboards from 4c)
 | 3a: text dashboard and debug view | v0.3.0 | done |
 | 3b: charts | v0.4.0 | done |
 | 4a: InfluxDB 1.x writer | v0.5.0 | done |
-| 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | next |
-| 4c: Grafana dashboards | v0.7.0 | planned |
+| 4b: event detection, hourly totals, backfill from raw logs | v0.6.0 | done |
+| 4c: Grafana dashboards | v0.7.0 | next |
 
 Several bytes are still undecoded, notably the master→slave `0x41` frame's `[26..28]` and
 the gas-frame counters. See `PROTOCOL_NOTES.md` §6. Community decodes for single-unit

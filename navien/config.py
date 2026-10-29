@@ -54,12 +54,20 @@ class InfluxCfg:
 
 
 @dataclass
+class EventsCfg:
+    debounce_s: float = 3.0             # a run must hold / stay off this long (PLAN §1.10)
+    short_burn_s: float = 30.0          # burns with less flame time count as short
+    hot_band_c: float = 1.0             # "hot" = outlet within this of the setpoint
+
+
+@dataclass
 class Config:
     serial: SerialCfg = field(default_factory=SerialCfg)
     http: HttpCfg = field(default_factory=HttpCfg)
     state: StateCfg = field(default_factory=StateCfg)
     rawlog: RawlogCfg = field(default_factory=RawlogCfg)
     influx: InfluxCfg = field(default_factory=InfluxCfg)
+    events: EventsCfg = field(default_factory=EventsCfg)
 
 
 def _apply(obj, data: dict, where: str) -> None:
@@ -90,4 +98,6 @@ def load(path: str | Path | None = None) -> Config:
         raise ValueError("rawlog.rotate must be 'hourly' or 'daily'")
     if cfg.influx.batch_seconds <= 0 or cfg.influx.max_queue < 1 or cfg.influx.timeout_s <= 0:
         raise ValueError("influx.batch_seconds, max_queue and timeout_s must be positive")
+    if cfg.events.debounce_s < 0 or cfg.events.short_burn_s < 0 or cfg.events.hot_band_c < 0:
+        raise ValueError("events.debounce_s, short_burn_s and hot_band_c must not be negative")
     return cfg

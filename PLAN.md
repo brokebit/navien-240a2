@@ -86,9 +86,11 @@ navien/
   api.py           FastAPI app, lifespan wiring, REST + WebSocket routes
   influx.py        Influx 1.x schema + line-protocol writer (Phase 4a)
   events.py        Recorder: events + hourly rollups from cycles (Phase 4b)
+  backfill.py      `backfill` subcommand: raw logs -> Influx; `prime` at service start (Phase 4b)
   web/             static dashboard: index.html, app.js, style.css, vendor/uplot.*
 tests/
   test_protocol.py test_decode.py test_state.py test_hub.py test_rawlog.py test_api.py test_influx.py
+  test_events.py   data/ (raw log excerpt for the event tests)
 navien.example.toml
 requirements.txt   fastapi, uvicorn[standard], pyserial, httpx; dev: pytest
 packaging/              files installed by the .deb (§1.11)
@@ -309,14 +311,20 @@ mode is exact.
 **Events (`navien/events.py`).** A pure state machine over cycle snapshots; no I/O, no
 clock of its own (uses cycle timestamps), so it is tested by replaying captures and raw
 logs. Transitions are debounced (`events.debounce_s`, default 3 s) so a one-cycle blip
-neither splits nor creates an event.
+neither splits nor creates an event: a run must hold that long to count and be off that
+long to end (burns start on their first cycle; only their end is debounced). An event is
+written when it ends, timestamped at its start. Every event has `duration_s` (seconds the
+condition held) and `truncated`: a data gap (> 10 s between cycles, or one unit silent that
+long) ends open events at their last cycle with `truncated=true`, and after a gap a
+condition that is already on is ignored until it goes off, since its start is unknown.
+Missing data is "unknown", never "off".
 
 | `type` | unit | starts / ends | fields |
 |---|---|---|---|
-| `draw` | `all` | any unit in DHW demand (`0x41`[16] > 0) / none | `duration_s volume_l gas_kcal peak_flow_lpm mean_outlet_c min_inlet_c time_to_hot_s units_max` (2 = slave was called in) |
+| `draw` | `all` | any unit in DHW demand (water[8] = `20`; the same as `0x41`[16] > 0, a cycle sooner) / none | `duration_s volume_l gas_kcal peak_flow_lpm mean_outlet_c min_inlet_c time_to_hot_s units_max` (2 = slave was called in) |
 | `draw_unit` | 0/1 | that unit's water[8] = `20` | same, per unit |
 | `recirc` | 0/1 | that unit's water[8] = `08` | `duration_s volume_l gas_kcal start_inlet_c end_outlet_c since_last_s` |
-| `burn` | 0/1 | stage leaves standby / returns to standby or dhw_wait | `duration_s flame_s ignition_s` (startup→flame_on) `mode_code short` (flame < `events.short_burn_s`, default 30 s) `failed` (no flame_on reached) |
+| `burn` | 0/1 | stage enters startup…combustion (water[10] `20`–`34`) / leaves it (flame off, post-purge, wait, standby) | `duration_s flame_s ignition_s` (start→first flame) `ignitions` (flame rising edges; a re-light inside the debounce stays one burn) `mode_code` (mode with most flame time) `short` (flame < `events.short_burn_s`, default 30 s) `failed` (no flame at all: an aborted start) |
 | `stage2` | `all` | `0x41`[20] bit `0x02` set / cleared | `duration_s trigger_flow_lpm trigger_capacity_pct` (master's, at the set cycle) |
 | `error` | 0/1 | water[14..15] ≠ 0 / = 0 | `code level duration_s` |
 
@@ -325,22 +333,32 @@ neither splits nor creates an event.
 the service: dashboards filter on `duration_s`, `volume_l` and `peak_flow_lpm`, so the
 thresholds can change without rewriting history.
 
-**Hourly rollups.** Written by the Recorder at each UTC hour end (and for the partial hour
-at shutdown): per unit and `all`: `water_dhw_l water_recirc_l gas_dhw_kcal gas_recirc_kcal
-gas_other_kcal draws recirc_runs burns short_burns failed_ignitions flame_s stage2_s
-peak_flow_lpm min_supply_c coverage_s`. `coverage_s` is the seconds of bus data seen in
-that hour; a later backfill of the full hour overwrites a partial one (same series, same
-timestamp). Daily, weekly and monthly figures are `SUM()` over hourly with
+**Hourly rollups.** Written by the Recorder `debounce_s` + 5 s after each UTC hour ends (so
+events ending in its last seconds still count), and for the open hour at shutdown: per unit
+and `all`: `water_dhw_l water_recirc_l gas_dhw_kcal gas_recirc_kcal gas_other_kcal draws
+recirc_runs burns ignitions short_burns failed_ignitions flame_s stage2_s peak_flow_lpm
+min_supply_c coverage_s`, timestamped at the hour start. Integrals land in the hour of each
+cycle; event counts in the hour the event ended. `all` sums the units (`flame_s` is
+burner-seconds), except `peak_flow_lpm` (peak total DHW flow) and `stage2_s` (`all` only).
+`coverage_s` is the seconds of bus data seen in that hour. A restarted service first replays
+the current hour's raw log into its Recorder (`backfill.prime`, ~2 s for a full hour), so
+a restart does not leave a partial hour behind, and one shorter than 10 s does not even
+split an event; a later backfill of the full hour also overwrites a partial one (same
+series, same timestamp). Daily, weekly and monthly figures are `SUM()` over hourly with
 `GROUP BY time(1d) tz('America/Chicago')`, so no continuous queries are needed and nothing
 has to be re-run after a backfill. `min_supply_c` = lowest inlet during draws longer than
 2 min, the cold-supply estimate.
 
-**Backfill.** `navien-dash backfill [--from DATE] [--to DATE] [PATH…]` (default
-`rawlog.dir`): parse each raw log with its `.idx` timing, run the same StateModel →
+**Backfill.** `navien-dash backfill [--from WHEN] [--to WHEN] [--dry-run] [PATH…]`
+(default `rawlog.dir`; config `./navien.toml`, else `/etc/navien-dash/navien.toml`): parse
+the raw logs in time order as one stream with their `.idx` timing, run the same StateModel →
 Recorder → writer at full speed with original timestamps. Idempotent (Influx overwrites
 identical series + timestamp), so it can be re-run after a decoder or event-logic fix.
-Needs no serial port and can run beside the service. The raw logs since v0.1.0 become
-history the day Influx is enabled.
+Needs no serial port and can run beside the service. `navien_bus` is not written (it
+describes the live process). Never drops points: it waits for Influx and gives up after 8
+failed attempts. `--dry-run` detects events and counts points without writing. The raw logs
+since v0.1.0 become history the day Influx is enabled. Speed: ~3.5 s per hour of log on the
+Pi 4.
 
 **This installation (decided 2026-10-28).** InfluxDB OSS 1.13.1 at
 `https://iot.dynowski.com:8086` (LAN, 192.168.100.12), authentication off, database
@@ -508,7 +526,8 @@ only, counted in `/api/health`.
 
 **Done when:** a backfill of the raw logs since v0.1.0 gives event counts and daily
 totals that match a direct analysis of the same logs (as in the 2026-10-28 analysis:
-24 recirc runs, 47 % recirc share for that afternoon), and re-running it changes nothing.
+17 recirc runs (corrected from 24, see the changelog), 47 % recirc share for that
+afternoon), and re-running it changes nothing.
 
 **4c — Grafana dashboards (v0.7.0, tag `phase-4`).**
 1. The six dashboards of §1.10 as JSON, provisioning examples, setup notes in
@@ -605,3 +624,15 @@ an offline analyzer tool.
   decoder for `mode_code`. `grafana/README.md`: database/RP statements, data source, example
   queries. Checked against the real server (1.13.1): a write to a missing database gets a 404
   and is retried, not dropped.
+- 2026-10-28 — Phase 4b implemented: `navien/events.py` (Recorder: debounced trackers for
+  draw, draw_unit, recirc, burn, stage2, error; hourly buckets), `navien_event` and
+  `navien_hourly` in `SCHEMA`, `[events]` config, `navien/backfill.py` (`navien-dash
+  backfill`, and `prime` at service start). Deviations from the plan above: draws key on the
+  units' water[8] rather than the lagged `0x41`[16]; burns are startup→end of combustion and
+  carry `ignitions`; event counts go to the hour the event ends; `truncated` on every event.
+  Checked against the 2026-10-28 15:43–19:10 service log: 149 L DHW, 9 094 kcal, recirc
+  share 46.7 % (frame-level analysis: 149 L, 9 098 kcal, 47 %); 17 recirc runs (10 master,
+  7 slave) and 23 ignitions, equal to the raw mode-`08` runs and flame-on entries. The
+  earlier "24 runs (16 + 8)" was a miscount. One aborted start found (master 18:18:29:
+  startup → flame off → post-purge, lit 10 s later). Tests use a 15-minute excerpt of that
+  log in `tests/data/` (54 kB).

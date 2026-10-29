@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 
+from .backfill import prime
 from .config import Config
 from .hub import Hub
 from .influx import InfluxWriter
@@ -52,7 +54,7 @@ class Service:
             log.info("influx: disabled for --replay")
         elif cfg.influx.enabled:
             self.influx = InfluxWriter(cfg.influx, stale_s=cfg.state.bus_timeout_s,
-                                       bus_extra=self._bus_extra)
+                                       bus_extra=self._bus_extra, events=cfg.events)
         self._influx_task: asyncio.Task | None = None
         self.reader = Reader(source, on_frames=self._from_reader,
                              on_bytes=self.rawlog.put if self.rawlog else None,
@@ -66,6 +68,15 @@ class Service:
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
         self.finished = asyncio.Event()
+        if self.influx and self.rawlog:
+            # before the raw logger reopens this hour's file and before any live cycle
+            try:
+                lines = await asyncio.to_thread(prime, self.influx.recorder,
+                                                Path(self.cfg.rawlog.dir), time.time())
+                self.influx.add(lines)
+                log.info("events: primed from this hour's raw log (%d points)", len(lines))
+            except Exception:
+                log.exception("events: could not prime from the raw log")
         if self.rawlog:
             self.rawlog.start()
         self.reader.start()

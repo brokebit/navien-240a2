@@ -32,8 +32,13 @@ database = "navien"
 username = ""                 # leave empty if the server has auth disabled
 password = ""
 retention_policy = "samples_90d"      # per-cycle samples (navien_unit, navien_cascade)
-rollup_retention_policy = "forever"   # counters, bus stats (later: events, hourly totals)
+rollup_retention_policy = "forever"   # counters, bus stats, events, hourly totals
 batch_seconds = 10.0
 max_queue = 50000             # points held while Influx is unreachable (~4 h of samples)
 timeout_s = 10.0
 sample_every_s = 1.0          # 1 = every bus cycle
+
+[events]                      # event detection and hourly totals (written with [influx])
+debounce_s = 3.0              # a draw/run must last, and a gap in it be shorter, than this
+short_burn_s = 30.0           # burns with less flame time than this count as short
+hot_band_c = 1.0              # time_to_hot: outlet within this of the setpoint

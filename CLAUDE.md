@@ -92,7 +92,9 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
   Phase 1: `service.py` (wiring, reader thread → event loop), `hub.py` (fan-out),
   `api.py` (FastAPI REST, OpenAPI at `/docs`, JSON index at `/api`). Phase 2: `ws.py`
   (`/ws` push protocol, documented in its docstring). Phase 4a: `influx.py` (`SCHEMA`, line
-  protocol, batching writer; live bus only, never `--replay`). Phase 3a/3b: `web/` — the dashboard served
+  protocol, batching writer; live bus only, never `--replay`). Phase 4b: `events.py` (Recorder:
+  debounced events and hourly totals, pure), `backfill.py` (`navien-dash backfill` raw logs →
+  Influx; `prime` replays the current hour into the Recorder at service start). Phase 3a/3b: `web/` — the dashboard served
   at `/` (charts are our own SVG in `web/charts.js`) (plain ES modules, no build step, no CDN). No browser or JS engine on the Pi, so
   frontend changes can only be checked by the user (dev server: `--replay … --loop
   --http-port 8765`, then http://192.168.100.181:8765).
@@ -101,7 +103,9 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
   `--replay <file.raw[.gz]> [--speed 0|N] [--loop]` replaces the serial port (no raw logging).
   Field tables in `navien/decode.py` are the code's byte map; keep them in step with PROTOCOL_NOTES.md.
 - `tests/` — `venv/bin/python -m pytest`. Runs against `captures/`, which is gitignored
-  (local to the Pi), so the capture-based tests only run here.
+  (local to the Pi), so the capture-based tests only run here. `tests/data/` (committed) is a
+  15-minute excerpt of the 2026-10-28 service log (18:17:30–18:32:30: aborted start, two-unit
+  draw with stage 2, recirc runs on both units) for the event tests.
 - `raw/` (gitignored) — the service's rotating raw log, `navien_<UTC period>.raw` + `.idx`
   (frame-start timestamps). Re-parse these with `navien.source.load_chunks`.
 - `grafana/` — Influx setup statements and example queries (`README.md`); dashboards from Phase 4c.
@@ -169,7 +173,8 @@ the dev tree or `navien-capture.py` against the port.
 ## Next steps
 
 Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebSocket →
-3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana). Each phase is reviewed with the user before
+3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana).
+4b is done (v0.6.0); 4c needs the user's Grafana data source name and gas price. Each phase is reviewed with the user before
 the next starts.
 
 Reverse-engineering track (runs alongside; the dashboard's debug view and raw log support it):

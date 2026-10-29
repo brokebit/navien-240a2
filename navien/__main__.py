@@ -1,7 +1,8 @@
 """python -m navien — the Navien cascade monitor service.
 
-Default: web server (REST API now, dashboard from Phase 3a). --headless: no web server,
-print one line per bus cycle. Receive-only: nothing in this package writes to the bus.
+Default: web server (dashboard, REST API, WebSocket). --headless: no web server, print one
+line per bus cycle. `backfill`: load raw logs into InfluxDB (`backfill --help`).
+Receive-only: nothing in this package writes to the bus.
 """
 
 from __future__ import annotations
@@ -87,6 +88,10 @@ async def run_headless(service: Service) -> None:
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["backfill"]:
+        from .backfill import main as backfill_main
+        return backfill_main(argv[1:])
     args = parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")

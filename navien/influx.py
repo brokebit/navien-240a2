@@ -4,8 +4,9 @@ The writer is a Hub subscriber on "cycle". `Points` turns each cycle snapshot in
 line-protocol lines (pure, no I/O); `InfluxWriter` queues them and POSTs batches to
 `/write`. Everything runs on the event loop in one task, so the queues need no locks.
 
-Two queues, one per retention policy: "samples" (navien_unit, navien_cascade, every
-cycle) and "rollup" (everything else). Over `max_queue` points the oldest *samples* are
+Each cycle also goes through an events.Recorder (navien_event, navien_hourly). Two queues,
+one per retention policy: "samples" (navien_unit, navien_cascade, every cycle) and
+"rollup" (everything else). Over `max_queue` points the oldest *samples* are
 dropped first. Failures:
   - network error, timeout, 5xx, 429, and 401/403/404 (auth, database or RP missing:
     fixable on the server) -> keep the batch, back off 1 s .. 60 s, retry;
@@ -31,7 +32,7 @@ from typing import Callable
 
 import httpx
 
-from .config import InfluxCfg
+from .config import EventsCfg, InfluxCfg
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,25 @@ SCHEMA: dict[str, tuple[tuple[str, ...], dict[str, type]]] = {
         "frames": int, "checksum_fail": int, "seed_unexpected": int, "cycle_ms": int,
         "resyncs": int, "reader_bytes": int, "rawlog_dropped_chunks": int, "ws_clients": int,
         "influx_queued": int, "influx_dropped": int, "influx_rejected": int,
+    }),
+    # events.py: one point per event, at its start; fields by type in PLAN §1.10
+    "navien_event": (("type", "unit"), {
+        "duration_s": float, "truncated": bool,
+        "volume_l": float, "gas_kcal": float, "peak_flow_lpm": float, "mean_outlet_c": float,
+        "min_inlet_c": float, "time_to_hot_s": float, "units_max": int,          # draw, draw_unit
+        "start_inlet_c": float, "end_outlet_c": float, "since_last_s": float,    # recirc
+        "flame_s": float, "ignition_s": float, "ignitions": int, "mode_code": int,
+        "short": bool, "failed": bool,                                           # burn
+        "trigger_flow_lpm": float, "trigger_capacity_pct": float,                # stage2
+        "code": int, "level": int,                                               # error
+    }),
+    # events.py: one point per UTC hour and unit ("0", "1", "all"), at the hour start
+    "navien_hourly": (("unit",), {
+        "water_dhw_l": float, "water_recirc_l": float,
+        "gas_dhw_kcal": float, "gas_recirc_kcal": float, "gas_other_kcal": float,
+        "draws": int, "recirc_runs": int, "burns": int, "ignitions": int, "short_burns": int,
+        "failed_ignitions": int, "flame_s": float, "stage2_s": float, "peak_flow_lpm": float,
+        "min_supply_c": float, "coverage_s": float,
     }),
 }
 SAMPLE_MEASUREMENTS = ("navien_unit", "navien_cascade")
@@ -137,9 +157,10 @@ class Points:
     so a silent unit does not repeat its last values forever.
     """
 
-    def __init__(self, sample_every_s: float = 1.0, stale_s: float = 3.0) -> None:
+    def __init__(self, sample_every_s: float = 1.0, stale_s: float = 3.0, bus: bool = True) -> None:
         self.sample_every_s = sample_every_s
         self.stale_s = stale_s
+        self.bus = bus            # navien_bus describes this process; backfill leaves it out
         self._sample_bucket: int | None = None
         self._minute: int | None = None
 
@@ -170,10 +191,11 @@ class Points:
                 fields = {name: u.get(name) for name in SCHEMA["navien_counters"][1]}
                 out.append(("rollup", line("navien_counters",
                                            {"unit": unit, "role": u.get("role", "")}, fields, ts_ms)))
-            bus = dict(snap.get("bus", {}))
-            bus.update(bus_extra or {})
-            fields = {name: bus.get(name) for name in SCHEMA["navien_bus"][1]}
-            out.append(("rollup", line("navien_bus", {}, fields, ts_ms)))
+            if self.bus:
+                bus = dict(snap.get("bus", {}))
+                bus.update(bus_extra or {})
+                fields = {name: bus.get(name) for name in SCHEMA["navien_bus"][1]}
+                out.append(("rollup", line("navien_bus", {}, fields, ts_ms)))
 
         return [(q, ln) for q, ln in out if ln is not None]
 
@@ -183,9 +205,12 @@ class Points:
 class InfluxWriter:
     def __init__(self, cfg: InfluxCfg, stale_s: float = 3.0,
                  bus_extra: Callable[[], dict] | None = None,
-                 transport: httpx.AsyncBaseTransport | None = None) -> None:
+                 transport: httpx.AsyncBaseTransport | None = None,
+                 events: EventsCfg | None = None, bus: bool = True) -> None:
+        from .events import Recorder          # events imports this module
         self.cfg = cfg
-        self.points = Points(cfg.sample_every_s, stale_s)
+        self.points = Points(cfg.sample_every_s, stale_s, bus=bus)
+        self.recorder = Recorder(events, stale_s)
         self.bus_extra = bus_extra
         self.queues: dict[str, deque[str]] = {"rollup": deque(), "samples": deque()}
         self.rp = {"samples": cfg.retention_policy, "rollup": cfg.rollup_retention_policy}
@@ -223,7 +248,7 @@ class InfluxWriter:
         extra = dict(self.bus_extra() if self.bus_extra else {},
                      influx_queued=self.queued, influx_dropped=self.dropped,
                      influx_rejected=self.rejected)
-        self.add(self.points.from_cycle(snap, extra))
+        self.add(self.points.from_cycle(snap, extra) + self.recorder.feed(snap))
 
     # -------------------------------------------------------------- sending
 
@@ -301,6 +326,7 @@ class InfluxWriter:
             while not self.sub.queue.empty():
                 _topic, snap = self.sub.queue.get_nowait()
                 self.ingest(snap)
+        self.add(self.recorder.finish())          # open events (truncated), the partial hour
         if self.queued:
             try:
                 await asyncio.wait_for(self.flush(), self.cfg.timeout_s)
@@ -319,6 +345,7 @@ class InfluxWriter:
             "batches": self.batches,
             "dropped": self.dropped,
             "rejected": self.rejected,
+            "events": dict(self.recorder.counts),
             "subscription_dropped": self.sub.dropped if self.sub else 0,
             "last_ok": self.last_ok,
             "last_error": self.last_error,

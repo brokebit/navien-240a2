@@ -7,7 +7,7 @@ one-time steps on the Influx and Grafana side. The schema itself is in
 ## 1. Database and retention policies
 
 Two retention policies: per-second samples for 90 days, everything else (counters, bus
-stats, and from v0.6.0 events and hourly totals) forever.
+stats, events and hourly totals) forever.
 
 ```sql
 CREATE DATABASE "navien" WITH DURATION INF REPLICATION 1 NAME "forever"
@@ -76,6 +76,8 @@ All values metric; tags `unit` (`0` master, `1` slave) and `role`.
 | `navien_cascade` | `samples_90d` | 1/s | units in demand, total flow, mean capacity/temperatures, status bits, `x26..x28` |
 | `navien_counters` | `forever` | 1/min per unit | the gas-frame counters (unverified) and version strings |
 | `navien_bus` | `forever` | 1/min | frame and error counters since service start, writer queue/drops |
+| `navien_event` | `forever` | per event | tags `type` (`draw recirc burn stage2 error`, `draw_unit`) and `unit` (`0 1 all`); timestamped at the event start, written at its end (PLAN.md §1.10) |
+| `navien_hourly` | `forever` | 1/h per unit + `all` | litres and kcal by purpose (`water_dhw_l water_recirc_l gas_dhw_kcal gas_recirc_kcal gas_other_kcal`), counts (`draws recirc_runs burns ignitions short_burns failed_ignitions`), `flame_s stage2_s peak_flow_lpm min_supply_c coverage_s` |
 
 Codes: `mode_code` 0 idle, 8 recirculation, 32 hot water demand. `stage_code` 20 standby,
 21 demand, 32 startup, 40/41 pre-purge, 42 pre-ignition, 43 ignition, 44 flame on,
@@ -125,5 +127,49 @@ SELECT NON_NEGATIVE_DIFFERENCE(LAST("checksum_fail")) FROM "forever"."navien_bus
 WHERE $timeFilter GROUP BY time(1h)
 ```
 
-Samples are kept 90 days. Longer-range totals come from the hourly rollups added in
-v0.6.0, which are kept forever.
+Samples are kept 90 days. For longer ranges use the hourly totals, which are kept
+forever. Sum them per day in local time:
+
+```sql
+SELECT SUM("water_dhw_l") / 3.78541 AS "gallons",
+       SUM("gas_recirc_kcal") / (SUM("gas_dhw_kcal") + SUM("gas_recirc_kcal")) * 100 AS "recirc %"
+FROM "forever"."navien_hourly" WHERE "unit" = 'all' AND $timeFilter
+GROUP BY time(1d) tz('America/Chicago')
+```
+
+Draws, newest first (one row per draw; filter on `duration_s` or `volume_l` to tell a
+hand-wash from a shower):
+
+```sql
+SELECT "duration_s", "volume_l" / 3.78541 AS "gal", "peak_flow_lpm" / 3.78541 AS "gpm",
+       "time_to_hot_s", "units_max"
+FROM "forever"."navien_event" WHERE "type" = 'draw' AND $timeFilter ORDER BY time DESC
+```
+
+Recirculation runs per day and unit:
+
+```sql
+SELECT COUNT("duration_s") FROM "forever"."navien_event"
+WHERE "type" = 'recirc' AND $timeFilter GROUP BY time(1d), "unit" tz('America/Chicago')
+```
+
+An hour with `coverage_s` well under 3600 had missing bus data (service stopped).
+
+## 6. Backfill from the raw logs
+
+The service keeps every byte it reads (`/var/lib/navien-dash/raw`, 60 days by default).
+`backfill` runs those logs through the same decoder and event detection as the live
+service and writes the result with the original timestamps:
+
+```sh
+navien-dash backfill --dry-run                 # events and point counts, writes nothing
+navien-dash backfill                           # every raw log
+navien-dash backfill --from 2026-10-28 --to 2026-10-28    # one local day
+```
+
+It reads `/etc/navien-dash/navien.toml` (or `--config`), needs no serial port and can run
+while the service does. Points with the same series and timestamp overwrite each other in
+Influx, so re-running it changes nothing, and running it after an upgrade that fixes the
+decoder or the event logic rewrites history with the fix. It takes about 3.5 s per hour of
+log on a Pi 4. Samples older than 90 days are refused by `samples_90d` and counted as
+rejected; events and hourly totals still go in.
