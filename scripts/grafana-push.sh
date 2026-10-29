@@ -68,17 +68,25 @@ else
 fi
 [ -z "$CHECK" ] || exit 0
 
-api GET /api/folders/$FOLDER_UID
-case $STATUS in
-    401|403) echo "Grafana refused the token ($STATUS): $(cat "$TMP/resp")" >&2; exit 1 ;;
-esac
 if [ -n "$FOLDER" ]; then
-    if [ "$STATUS" = 404 ]; then
+    # Grafana answers 403 (folders:read), not 404, for a folder uid that does not exist,
+    # because the permission is checked on the uid before the lookup.
+    api GET /api/folders/$FOLDER_UID
+    if [ "$STATUS" = 401 ]; then
+        echo "Grafana did not accept the token (401): $(cat "$TMP/resp")" >&2; exit 1
+    elif [ "$STATUS" = 403 ] || [ "$STATUS" = 404 ]; then
         python3 -c 'import json,sys; print(json.dumps({"uid": sys.argv[1], "title": sys.argv[2]}))' \
             "$FOLDER_UID" "$FOLDER" > "$TMP/folder.json"
         api POST /api/folders "$TMP/folder.json"
-        [ "$STATUS" = 200 ] || { echo "creating folder failed ($STATUS): $(cat "$TMP/resp")" >&2; exit 1; }
-        echo "created folder $FOLDER"
+        case $STATUS in
+            200) echo "created folder $FOLDER" ;;
+            409|412)
+                echo "folder uid $FOLDER_UID exists but this service account cannot see it:" >&2
+                echo "give the account Edit on it (Dashboards > the folder > Folder actions >" >&2
+                echo "Manage permissions), or run with GRAFANA_FOLDER= for the General folder" >&2
+                exit 1 ;;
+            *) echo "creating folder failed ($STATUS): $(cat "$TMP/resp")" >&2; exit 1 ;;
+        esac
     elif [ "$STATUS" != 200 ]; then
         echo "folder lookup failed ($STATUS): $(cat "$TMP/resp")" >&2; exit 1
     fi
