@@ -180,8 +180,9 @@ Build track: follow the phases in `PLAN.md` (0 foundations → 1 REST → 2 WebS
 3a text dashboard → 3b charts → 4a Influx writer → 4b events/backfill → 4c Grafana).
 Phase 4 is done (v0.7.1, tag `phase-4`); all planned phases are complete. Latest release
 v0.7.3 (2026-10-29): Influx status pill on the web dashboard, `navien-dash` journal tag,
-a once-a-minute `status (60 s): …` log line, version in the footer. Not yet confirmed by the
-user on the installed package: the pill's hover tooltip and the status line in the journal.
+a once-a-minute `status (60 s): …` log line, version in the footer. Installed and running
+(status line confirmed in the journal 2026-10-29); the pill's hover tooltip is not yet
+confirmed by the user.
 New work is feature requests from the user, each reviewed before release. Gas price is a
 dashboard variable (default $0.65/therm, the user's all-in rate incl. fees; commodity alone
 is $0.33). Grafana 13.2.4, data source `influxdb-navien`; the user uploads dashboards with
