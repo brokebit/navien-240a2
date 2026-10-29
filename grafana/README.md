@@ -204,7 +204,7 @@ GRAFANA_URL=https://grafana.example:3000 GRAFANA_TOKEN=glsa_... scripts/grafana-
 ```
 
 The token can live in `~/.config/navien-dash/grafana-token` (mode 600) instead of the
-environment. Pass a directory to upload other copies, e.g. the JSON files of a release.
+environment. `--check` only reports whether the token has the permissions it needs. Pass a directory to upload other copies, e.g. the JSON files of a release.
 Dashboards arrive with their file defaults, so a price you saved in Grafana is reset.
 
 **Provisioning** instead: `provisioning/dashboards/navien.yaml` loads every JSON file in a

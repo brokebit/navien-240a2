@@ -3,6 +3,7 @@
 #
 #   GRAFANA_URL=https://grafana.example:3000 GRAFANA_TOKEN=glsa_... scripts/grafana-push.sh
 #   scripts/grafana-push.sh path/to/dashboards     # e.g. the JSON files from a release
+#   scripts/grafana-push.sh --check                # only report the token's permissions
 #
 # GRAFANA_TOKEN is a service account token with the Editor role. Instead of the variable,
 # the token can be in a file: GRAFANA_TOKEN_FILE (default ~/.config/navien-dash/grafana-token).
@@ -12,6 +13,8 @@
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+CHECK=
+[ "${1:-}" = --check ] && { CHECK=1; shift; }
 DIR=${1:-$ROOT/grafana/dashboards}
 URL=${GRAFANA_URL:?set GRAFANA_URL, e.g. https://grafana.example:3000}
 URL=${URL%/}
@@ -42,6 +45,28 @@ api() {
         STATUS=$(curl -sS -o "$TMP/resp" -w '%{http_code}' -X "$1" -H @"$TMP/headers" "$URL$2")
     fi
 }
+
+# Permissions this script uses; Grafana's Editor role has them all.
+NEEDED="folders:read folders:create dashboards:read dashboards:create dashboards:write"
+api GET /api/access-control/user/permissions
+if [ "$STATUS" = 200 ]; then
+    MISSING=$(python3 -c '
+import json, sys
+have = json.load(open(sys.argv[1]))
+print(" ".join(p for p in sys.argv[2].split() if p not in have))' "$TMP/resp" "$NEEDED")
+    if [ -n "$MISSING" ]; then
+        echo "the token lacks: $MISSING" >&2
+        echo "give its service account the Editor role (Administration > Users and access >" >&2
+        echo "Service accounts > the account > Role); the token itself need not change" >&2
+        exit 1
+    fi
+    echo "token ok: has $NEEDED"
+elif [ "$STATUS" = 401 ]; then
+    echo "Grafana did not accept the token (401): $(cat "$TMP/resp")" >&2; exit 1
+else
+    echo "could not list the token's permissions ($STATUS); trying anyway" >&2
+fi
+[ -z "$CHECK" ] || exit 0
 
 api GET /api/folders/$FOLDER_UID
 case $STATUS in
