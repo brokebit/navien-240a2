@@ -147,7 +147,12 @@ def test_retryable_errors_keep_points_and_back_off(snaps):
             assert not await w.flush()
             assert w.queued == n and w.backoff_s == expected_backoff
         assert "404" in w.last_error
+        since = w.failing_since
+        assert since is not None and since <= w.last_error_at       # kept from the first failure
         assert await w.flush() and w.queued == 0 and w.written == n and w.backoff_s == 0
+        h = w.health()
+        assert h["failing_since"] is None and h["last_ok"] <= h["now"] and h["retry_in_s"] == 0
+        assert h["max_queue"] == w.cfg.max_queue and h["batch_seconds"] == w.cfg.batch_seconds
         await w.client.aclose()
     asyncio.run(go())
 
@@ -161,6 +166,9 @@ def test_bad_request_is_rejected_not_retried(snaps):
         assert await w.flush()                               # rollup batch rejected, samples written
         assert w.queued == 0 and w.rejected == rollup and w.written == samples
         assert "beyond retention policy" in w.last_error
+        h = w.health()
+        assert h["last_rejected_at"] is not None and h["failing_since"] is None
+        assert h["last_drop_at"] is None
         await w.client.aclose()
     asyncio.run(go())
 
@@ -170,7 +178,7 @@ def test_overflow_drops_oldest_samples_first(snaps):
         w = writer(FakeInflux(), max_queue=20)
         for s in snaps:
             w.ingest(s)
-        assert w.queued == 20 and w.dropped > 0
+        assert w.queued == 20 and w.dropped > 0 and w.health()["last_drop_at"] is not None
         assert len(w.queues["rollup"]) >= 3                  # counters + bus of the first minute kept
         newest = parse(w.queues["samples"][-1])[3]
         assert newest == round(snaps[-1]["ts"] * 1000)

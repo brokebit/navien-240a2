@@ -68,7 +68,7 @@ adapters and sets the FTDI latency timer to 1 ms.
 | Code and bundled virtualenv | `/opt/navien-dash` |
 | Config (conffile, kept on upgrade) | `/etc/navien-dash/navien.toml` |
 | Raw logs | `/var/lib/navien-dash/raw` (kept on purge) |
-| Logs | `journalctl -u navien-dash` |
+| Logs | `journalctl -u navien-dash` (or `-t navien-dash`; lines are tagged `navien-dash[pid]`) |
 | CLI | `navien-dash` (same flags as `python -m navien`) |
 
 After editing the config, run `sudo systemctl restart navien-dash`. The bundled venv is

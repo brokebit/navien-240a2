@@ -97,7 +97,8 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
   Influx; `prime` replays the current hour into the Recorder at service start). Phase 3a/3b: `web/` — the dashboard served
   at `/` (charts are our own SVG in `web/charts.js`) (plain ES modules, no build step, no CDN). No browser or JS engine on the Pi, so
   frontend changes can only be checked by the user (dev server: `--replay … --loop
-  --http-port 8765`, then http://192.168.100.181:8765).
+  --http-port 8765`, then http://192.168.100.181:8765; add `?influx=ok|retry|drop|reject` to
+  see the Influx status states, since replay has no writer).
   `venv/bin/python -m navien` serves http://<pi>:8000 from the live bus (config `./navien.toml`,
   gitignored; copy of `navien.example.toml`). `--headless` prints cycles instead;
   `--replay <file.raw[.gz]> [--speed 0|N] [--loop]` replaces the serial port (no raw logging).
@@ -131,7 +132,7 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
    or install packages on the user's behalf.
 
 Installed layout: code `/opt/navien-dash`, config `/etc/navien-dash/navien.toml`, raw logs
-`/var/lib/navien-dash/raw`, `journalctl -u navien-dash`, CLI `navien-dash` (same flags as
+`/var/lib/navien-dash/raw`, `journalctl -u navien-dash` (or `-t navien-dash`), CLI `navien-dash` (same flags as
 `python -m navien`). Stop the service (`sudo systemctl stop navien-dash`) before running
 the dev tree or `navien-capture.py` against the port.
 - `navien-capture.py` — standalone, receive-only proof-of-concept sniffer.

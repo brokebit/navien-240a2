@@ -1,4 +1,4 @@
-# Installed by the navien-dash package. Logs: journalctl -u navien-dash -f
+# Installed by the navien-dash package. Logs: journalctl -u navien-dash -f (or -t navien-dash)
 # Stop it before running navien-capture.py: only one process may own the serial port.
 [Unit]
 Description=Navien cascade monitor (RS-485, receive-only)
@@ -14,6 +14,8 @@ StateDirectory=navien-dash
 WorkingDirectory=/var/lib/navien-dash
 ExecStart=/opt/navien-dash/venv/bin/python -m navien --config /etc/navien-dash/navien.toml
 Environment=PYTHONUNBUFFERED=1
+# journal lines read navien-dash[pid], not python[pid]: journalctl -t navien-dash
+SyslogIdentifier=navien-dash
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM

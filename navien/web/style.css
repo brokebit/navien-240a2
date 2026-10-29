@@ -97,11 +97,18 @@ a { color: inherit; }
 .status-warning .icon { background: var(--warning); clip-path: polygon(50% 0, 100% 100%, 0 100%); width: 12px; height: 11px; }
 .status-critical .icon { background: var(--critical); clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); width: 12px; height: 12px; }
 .status-critical { border-color: var(--critical); }
+.has-tip { position: relative; cursor: default; }
+.has-tip[data-tip]:hover::after, .has-tip[data-tip]:focus-visible::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 0; z-index: 10;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--hairline); border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); padding: 6px 8px; font-size: 0.8rem; font-weight: 400;
+}
 
 .conn-detail {
   max-width: 1200px; margin: 0 auto 12px; padding: 8px 12px;
   border-left: 3px solid var(--critical); background: var(--surface); border-radius: 6px;
 }
+.conn-detail.warning { border-left-color: var(--warning); }
 
 main { max-width: 1200px; margin: 0 auto; }
 

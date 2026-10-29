@@ -2,6 +2,7 @@
 
 import { DEFAULT_PREFS, UNITS, fmt, fmtAge, fmtNumber, humanize, unitLabel } from "./units.js";
 import { Debug } from "./debug.js";
+import { fakeInflux, influxStatus } from "./influx.js";
 import { LineChart, StateBand } from "./charts.js";
 
 const STALE_S = 5;                  // no cycle for this long -> data shown as stale
@@ -31,6 +32,8 @@ const app = {
   latest: null,
   lastCycleAt: 0,                   // client clock: when the last cycle arrived
   health: null,
+  healthAt: 0,                      // client clock: when health arrived
+  influxFake: false,                // ?influx=… dev override in effect
   ws: null,
   wsOpen: false,
 };
@@ -158,7 +161,11 @@ async function pollHealth() {
   try {
     const r = await fetch("/api/health", { cache: "no-store" });
     app.health = await r.json();
-    debug.onHealth(app.health);
+    app.healthAt = Date.now();
+    const { fake, h } = fakeInflux(app.health.influx);
+    app.health.influx = h;
+    app.influxFake = fake;
+    debug.onHealth(app.health, app.healthAt);
   } catch {
     app.health = null;
   }
@@ -190,6 +197,28 @@ function renderStatus() {
   d.textContent = detail;
   $("foot-age").textContent = age === null ? "never" : `${fmtAge(age)} ago`;
   document.body.classList.toggle("is-stale", cls !== "good");
+  renderInflux();
+}
+
+// Shown only when the service writes to InfluxDB (never under --replay).
+function renderInflux() {
+  const h = app.health && app.health.influx;
+  const pill = $("influx"), detail = $("influx-detail"), foot = $("foot-influx");
+  pill.hidden = foot.hidden = !h;
+  if (!h) {
+    detail.hidden = true;
+    return;
+  }
+  const s = influxStatus(h, app.healthAt);
+  const sim = app.influxFake ? " (simulated)" : "";
+  pill.className = `pill status-${s.cls}`;
+  pill.querySelector(".label").textContent = s.label + sim;
+  // a CSS tooltip, not title=: title is reset every second here, so the browser never shows it
+  pill.dataset.tip = s.footer;
+  detail.hidden = !s.detail;
+  detail.className = `conn-detail ${s.cls}`;
+  detail.textContent = s.detail + (sim && s.detail ? " [Simulated: remove ?influx= from the address.]" : "");
+  foot.querySelector(".text").textContent = s.footer + sim;
 }
 
 // ------------------------------------------------------------------ household view

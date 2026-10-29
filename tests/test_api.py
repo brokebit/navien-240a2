@@ -42,7 +42,7 @@ def test_dashboard_is_served(replay_client):
     r = replay_client.get("/")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     assert "<title>Navien cascade</title>" in r.text and r.headers["cache-control"] == "no-cache"
-    for name in ("app.js", "units.js", "debug.js", "charts.js", "style.css"):
+    for name in ("app.js", "units.js", "debug.js", "charts.js", "influx.js", "style.css"):
         r = replay_client.get(f"/{name}")
         assert r.status_code == 200, name
     assert "javascript" in replay_client.get("/app.js").headers["content-type"]
@@ -119,3 +119,33 @@ def test_second_opener_of_the_port_is_refused(tmp_path):
         first.close()
         os.close(master)
         os.close(slave)
+
+
+def test_status_line_counts_since_the_previous_line(replay_client):
+    service = replay_client.app.state.service
+    first = service.status_line()                     # since start: the whole capture
+    assert first.startswith("status (") and " 420 frames, 0 bad, 0 resyncs" in first
+    assert "influx" not in first and "web clients" in first
+    second = service.status_line()
+    assert " 0 cycles, 0 frames," in second
+
+
+def test_status_line_reports_influx(tmp_path):
+    import asyncio
+    from navien.influx import InfluxWriter
+    cfg = config.load()
+    service = Service(cfg, replay=str(MAIN_CAPTURE), speed=0)
+
+    async def go():
+        service.influx = InfluxWriter(cfg.influx)
+        service._status_prev = service._counters()
+        service.influx.written += 437
+        service.influx.add([("samples", "m v=1")] * 7)
+        line = service.status_line()
+        assert "influx 437 written, 7 queued" in line and "DROPPED" not in line
+        service.influx.dropped += 3
+        service.influx.failing_since = time.time() - 120
+        line = service.status_line()
+        assert "influx 0 written, 7 queued, 3 DROPPED, 0 REJECTED, failing for 120 s" in line
+        await service.influx.client.aclose()
+    asyncio.run(go())

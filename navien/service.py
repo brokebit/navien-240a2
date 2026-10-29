@@ -24,6 +24,7 @@ from .state import StateModel
 log = logging.getLogger(__name__)
 
 TICK_S = 0.25
+STATUS_LOG_S = 60.0     # one INFO line with counters, so the journal shows the service is alive
 
 
 class Service:
@@ -62,6 +63,9 @@ class Service:
         self.loop: asyncio.AbstractEventLoop | None = None
         self.finished: asyncio.Event | None = None
         self._ticker: asyncio.Task | None = None
+        self._status_task: asyncio.Task | None = None
+        self.cycles = 0
+        self._status_prev: dict | None = None
 
     # -------------------------------------------------------------- lifecycle
 
@@ -81,6 +85,8 @@ class Service:
             self.rawlog.start()
         self.reader.start()
         self._ticker = asyncio.create_task(self._tick_loop())
+        self._status_prev = self._counters()
+        self._status_task = asyncio.create_task(self._status_loop())
         if self.influx:
             sub = self.hub.subscribe({"cycle"}, maxsize=600, name="influx")
             self._influx_task = asyncio.create_task(self.influx.run(sub))
@@ -90,6 +96,8 @@ class Service:
     async def stop(self) -> None:
         if self._ticker:
             self._ticker.cancel()
+        if self._status_task:
+            self._status_task.cancel()
         await asyncio.to_thread(self.reader.stop)
         if self.rawlog:
             await asyncio.to_thread(self.rawlog.stop)
@@ -121,6 +129,7 @@ class Service:
         for frame in frames:
             snap = self.state.ingest(frame)
             if snap:
+                self.cycles += 1
                 self.hub.publish("cycle", snap)
             self.hub.publish("frame", frame)
 
@@ -130,7 +139,53 @@ class Service:
             if self.wall_clock_frames:
                 snap = self.state.tick(time.time())
                 if snap:
+                    self.cycles += 1
                     self.hub.publish("cycle", snap)
+
+    async def _status_loop(self) -> None:
+        while True:
+            await asyncio.sleep(STATUS_LOG_S)
+            try:
+                log.info("%s", self.status_line())
+            except Exception:                         # never let logging stop the service
+                log.exception("status line failed")
+
+    def _counters(self) -> dict:
+        b = self.state.bus_stats()
+        c = {"t": time.monotonic(), "cycles": self.cycles, "frames": b["frames"],
+             "bad": b["checksum_fail"], "resyncs": self.reader.parser.resyncs}
+        if self.influx:
+            c |= {"written": self.influx.written, "dropped": self.influx.dropped,
+                  "rejected": self.influx.rejected}
+        return c
+
+    def status_line(self) -> str:
+        """Counters since the previous call, e.g. "status (60 s): bus ok, 60 cycles, 420 frames,
+        0 bad, 0 resyncs; influx 437 written, 7 queued; 2 web clients"."""
+        now = self._counters()
+        prev = self._status_prev or now
+        self._status_prev = now
+        d = {k: now[k] - prev[k] for k in now}
+        h = self.health()
+        if h["bus_alive"]:
+            bus = "ok"
+        elif h["last_frame_age_s"] is None:
+            bus = "NO DATA yet"
+        else:
+            bus = f"NO DATA for {h['last_frame_age_s']:.0f} s"
+        parts = [f"bus {bus}, {d['cycles']} cycles, {d['frames']} frames, {d['bad']} bad, "
+                 f"{d['resyncs']} resyncs"]
+        if self.influx:
+            s = f"influx {d['written']} written, {self.influx.queued} queued"
+            if d["dropped"] or d["rejected"]:
+                s += f", {d['dropped']} DROPPED, {d['rejected']} REJECTED"
+            if self.influx.failing_since is not None:
+                s += f", failing for {time.time() - self.influx.failing_since:.0f} s"
+            parts.append(s)
+        if self.rawlog and self.rawlog.dropped_chunks:
+            parts.append(f"raw log {self.rawlog.dropped_chunks} chunks dropped since start")
+        parts.append(f"{self._bus_extra()['ws_clients']} web clients")
+        return f"status ({d['t']:.0f} s): " + "; ".join(parts)
 
     # ---------------------------------------------------------------- queries
 

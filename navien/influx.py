@@ -224,6 +224,9 @@ class InfluxWriter:
         self.last_ok: float | None = None
         self.last_error: str | None = None
         self.last_error_at: float | None = None
+        self.failing_since: float | None = None   # first retryable failure since the last success
+        self.last_drop_at: float | None = None
+        self.last_rejected_at: float | None = None
         self.backoff_s = 0.0
         self.retry_at = 0.0       # monotonic
         self.sub = None
@@ -242,6 +245,7 @@ class InfluxWriter:
             while excess > 0 and self.queues[queue]:
                 self.queues[queue].popleft()
                 self.dropped += 1
+                self.last_drop_at = time.time()
                 excess -= 1
 
     def ingest(self, snap: dict) -> None:
@@ -277,6 +281,7 @@ class InfluxWriter:
             self.written += len(batch)
             self.batches += 1
             self.last_ok = time.time()
+            self.failing_since = None
             self.backoff_s = 0.0
             return "ok"
         msg = f"HTTP {r.status_code}: {r.text.strip()[:300]}"
@@ -285,6 +290,7 @@ class InfluxWriter:
         # Not retryable. Influx may have written part of it ("partial write: … dropped=N").
         self.rejected += len(batch)
         self.last_error, self.last_error_at = msg, time.time()
+        self.last_rejected_at = self.last_error_at
         log.warning("influx rejected %d %s points: %s", len(batch), queue, msg)
         return "rejected"
 
@@ -294,6 +300,8 @@ class InfluxWriter:
         if msg != self.last_error:
             log.warning("influx write failed (%s); retrying in %.0f s", msg, self.backoff_s)
         self.last_error, self.last_error_at = msg, time.time()
+        if self.failing_since is None:
+            self.failing_since = self.last_error_at
         return "retry"
 
     # ------------------------------------------------------------ lifecycle
@@ -340,6 +348,9 @@ class InfluxWriter:
         return {
             "url": self.cfg.url,
             "database": self.cfg.database,
+            "now": time.time(),                  # the ages below are relative to this clock
+            "batch_seconds": self.cfg.batch_seconds,
+            "max_queue": self.cfg.max_queue,
             "queued": {k: len(q) for k, q in self.queues.items()},
             "written": self.written,
             "batches": self.batches,
@@ -350,5 +361,8 @@ class InfluxWriter:
             "last_ok": self.last_ok,
             "last_error": self.last_error,
             "last_error_at": self.last_error_at,
+            "failing_since": self.failing_since,
+            "last_drop_at": self.last_drop_at,
+            "last_rejected_at": self.last_rejected_at,
             "retry_in_s": round(max(0.0, self.retry_at - time.monotonic()), 1) if self.backoff_s else 0,
         }

@@ -656,3 +656,17 @@ an offline analyzer tool.
 - 2026-10-29 — Phase 4 accepted by the user (spot check in Grafana 13.2.4). Gas price
   default changed to $0.65/therm, the user's all-in rate; the data source variable
   preselects `influxdb-navien` (v0.7.1).
+- 2026-10-29 — Web dashboard: InfluxDB writer status (v0.7.2). A top-bar pill next to
+  "Live" (green: a write succeeded within 3 × `batch_seconds` + 10 s; amber: retrying or
+  overdue, with the queue size; red: points dropped because the buffer was full, or rejected,
+  in the last 10 min), a detail line under the bar when it is not green, the last write and
+  queue in the footer, and an InfluxDB block in the debug view. Hidden when Influx is off
+  and under `--replay`. `InfluxWriter.health()` gains `now`, `batch_seconds`, `max_queue`,
+  `failing_since`, `last_drop_at`, `last_rejected_at`. `?influx=ok|retry|drop|reject|off`
+  simulates a state (the page marks it "simulated") for checking the visuals.
+- 2026-10-29 — Journal: the unit sets `SyslogIdentifier=navien-dash` (lines read
+  `navien-dash[pid]`, `journalctl -t navien-dash`); httpx's per-request INFO lines are hidden
+  unless `-v` (Influx failures are still logged by `navien/influx.py`); instead the service
+  logs one `status (60 s): …` line a minute with counters since the previous one (cycles,
+  frames, bad checksums, resyncs, Influx points written / queued / dropped / rejected, web
+  clients), so a hung service is visible in the journal (v0.7.2).

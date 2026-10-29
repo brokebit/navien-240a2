@@ -95,6 +95,9 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if not args.verbose:
+        # one line per Influx write (several a minute) otherwise; failures are logged by influx.py
+        logging.getLogger("httpx").setLevel(logging.WARNING)
     config_path = args.config or (DEFAULT_CONFIG if DEFAULT_CONFIG.exists() else None)
     cfg = config_mod.load(config_path)
     if args.port:

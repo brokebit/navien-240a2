@@ -14,6 +14,9 @@
     <div id="conn" class="pill status-warning" role="status" aria-live="polite">
       <span class="icon" aria-hidden="true"></span><span class="label">Connecting…</span>
     </div>
+    <div id="influx" class="pill status-warning has-tip" role="status" aria-live="polite" tabindex="0" hidden>
+      <span class="icon" aria-hidden="true"></span><span class="label">Influx</span>
+    </div>
   </div>
   <div class="controls">
     <div class="seg" role="group" aria-label="Temperature unit" data-pref="temp">
@@ -31,6 +34,7 @@
 
 <main>
   <p id="conn-detail" class="conn-detail" hidden></p>
+  <p id="influx-detail" class="conn-detail" hidden></p>
 
   <section class="system" aria-label="Cascade summary">
     <div class="tile"><div class="tile-label">Burners firing</div><div class="tile-value" id="sys-firing">–</div></div>
@@ -74,6 +78,10 @@
       <div>
         <h3>Bus counters</h3>
         <dl id="bus-counters" class="kv"></dl>
+        <div id="influx-block" hidden>
+          <h3>InfluxDB</h3>
+          <dl id="influx-counters" class="kv"></dl>
+        </div>
       </div>
       <div class="framelog-wrap">
         <h3>Recent frames <button type="button" id="framelog-pause" class="small">Pause</button></h3>
@@ -85,6 +93,7 @@
 
 <footer class="footer">
   <span id="foot-source">–</span> · updated <span id="foot-age">–</span> ·
+  <span id="foot-influx" hidden><span class="text"></span> ·</span>
   <a href="/docs">API</a>
 </footer>
 

@@ -3,6 +3,7 @@
 
 import { fmtAge, fmtNumber } from "./units.js";
 import { LineChart } from "./charts.js";
+import { influxRows } from "./influx.js";
 
 // Order of the streams within a bus cycle (PROTOCOL_NOTES.md §3); unknown streams go last.
 const STREAM_ORDER = ["50>51/10", "51>50/90", "51>0F/90", "50>52/10", "50>50/90", "50>0F/90", "50>50/10"];
@@ -10,6 +11,16 @@ const HEADER_LEN = 6;
 const CHANGE_LEVELS = [[3, "chg-1"], [15, "chg-2"], [60, "chg-3"]];   // seconds since change -> class
 const FRAMELOG_LINES = 60;
 const BYTE_HISTORY = 600;            // frames kept per stream for the byte plot (~10 min at 1/s)
+
+function fillKv(dl, rows) {
+  dl.replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    return [dt, dd];
+  }));
+}
 
 const hex2 = (b) => b.toString(16).padStart(2, "0");
 
@@ -29,6 +40,9 @@ export class Debug {
     this.counters = document.getElementById("bus-counters");
     this.logEl = document.getElementById("framelog");
     this.health = null;
+    this.healthAt = 0;
+    this.influxBlock = document.getElementById("influx-block");
+    this.influxList = document.getElementById("influx-counters");
     this.chartEl = document.getElementById("byte-chart");
     this.byteChart = null;
     this.chartKey = null;
@@ -134,17 +148,15 @@ export class Debug {
       ["Raw log", h && h.rawlog ? `${h.rawlog.file} (${fmtNumber(h.rawlog.dropped_chunks)} dropped)` : "–"],
       ["Clients", h ? h.hub.subscribers.map((s) => s.name).join(", ") : "–"],
     ];
-    this.counters.replaceChildren(...rows.flatMap(([k, v]) => {
-      const dt = document.createElement("dt");
-      dt.textContent = k;
-      const dd = document.createElement("dd");
-      dd.textContent = v;
-      return [dt, dd];
-    }));
+    fillKv(this.counters, rows);
+    const influx = h && h.influx;
+    this.influxBlock.hidden = !influx;
+    if (influx) fillKv(this.influxList, influxRows(influx, this.healthAt));
   }
 
-  onHealth(h) {
+  onHealth(h, receivedAt) {
     this.health = h;
+    this.healthAt = receivedAt;
   }
 
   // -------------------------------------------------------------- rendering
