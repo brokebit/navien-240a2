@@ -115,7 +115,10 @@ whose rule depends on `[16]` — derivations known, **meaning unknown**.
 2. Tag `vX.Y.Z` (Phase N → `v0.N.0`; fixes bump the patch) and, at the end of a phase, `phase-N`.
 3. `scripts/build-deb.sh` → `dist/navien-dash_X.Y.Z_arm64.deb` (refuses a dirty tree;
    `--dev` builds `…+git….dirty` test packages).
-4. The user installs: `sudo apt install ./dist/navien-dash_X.Y.Z_arm64.deb`. Never run sudo
+4. Push commits and tags (`git push origin main --tags`; SSH from this shell may lack a key,
+   `gh` works over HTTPS), then `scripts/release.sh [vX.Y.Z]` → GitHub release with the
+   `.deb` attached; notes are the tagged commit's message, so write it for readers.
+5. The user installs: `sudo apt install ./dist/navien-dash_X.Y.Z_arm64.deb`. Never run sudo
    or install packages on the user's behalf.
 
 Installed layout: code `/opt/navien-dash`, config `/etc/navien-dash/navien.toml`, raw logs

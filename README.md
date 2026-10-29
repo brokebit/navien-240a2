@@ -128,7 +128,7 @@ navien/            the service: protocol, decode, state, source, rawlog, hub, se
 navien/web/        dashboard (HTML, CSS, ES modules)
 tests/             pytest suite (capture-based tests need the local captures/)
 packaging/         systemd unit, udev rule, sysusers, default config, maintainer scripts
-scripts/           build-deb.sh
+scripts/           build-deb.sh, release.sh (GitHub release with the .deb)
 navien-capture.py  standalone receive-only sniffer (proof of concept)
 PROTOCOL_NOTES.md  protocol findings and open questions
 PLAN.md            architecture, phased plan, changelog
