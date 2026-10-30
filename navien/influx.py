@@ -64,7 +64,8 @@ SCHEMA: dict[str, tuple[tuple[str, ...], dict[str, type]]] = {
     }),
     "navien_bus": ((), {
         "frames": int, "checksum_fail": int, "seed_unexpected": int, "cycle_ms": int,
-        "resyncs": int, "reader_bytes": int, "rawlog_dropped_chunks": int, "ws_clients": int,
+        "resyncs": int, "reader_bytes": int, "stall_reopens": int,
+        "rawlog_dropped_chunks": int, "ws_clients": int,
         "influx_queued": int, "influx_dropped": int, "influx_rejected": int,
     }),
     # events.py: one point per event, at its start; fields by type in PLAN §1.10

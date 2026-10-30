@@ -145,6 +145,7 @@ export class Debug {
       ["Unexpected seeds", fmtNumber(b.seed_unexpected)],
       ["Cycle", b.cycle_ms === null ? "–" : `${b.cycle_ms} ms`],
       ["Parser resyncs", h ? fmtNumber(h.reader.resyncs) : "–"],
+      ["Port reopens", h ? portReopens(h.reader) : "–"],
       ["Raw log", h && h.rawlog ? `${h.rawlog.file} (${fmtNumber(h.rawlog.dropped_chunks)} dropped)` : "–"],
       ["Clients", h ? h.hub.subscribers.map((s) => s.name).join(", ") : "–"],
     ];
@@ -303,4 +304,11 @@ export class Debug {
     if (this.framelog.length > FRAMELOG_LINES) this.framelog.shift();
     this.logEl.textContent = this.framelog.join("\n");
   }
+}
+
+// Times the reader reopened a silent serial port (Reader.stall_s), with how long ago.
+function portReopens(r) {
+  if (!r.stall_reopens) return "0";
+  const ago = Math.max(0, Date.now() / 1000 - r.last_stall_reopen_at);
+  return `${fmtNumber(r.stall_reopens)} (last ${fmtAge(ago)} ago)`;
 }

@@ -924,7 +924,7 @@
     {
       "type": "timeseries",
       "title": "Bus errors per minute",
-      "description": "",
+      "description": "Port reopens: the adapter delivered nothing for serial.stall_reopen_s and was reopened. Counted when data is back (no bus points while it is silent).",
       "datasource": {
         "type": "influxdb",
         "uid": "${datasource}"
@@ -951,6 +951,17 @@
           "resultFormat": "time_series",
           "alias": "Resyncs",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${datasource}"
+          },
+          "query": "SELECT NON_NEGATIVE_DIFFERENCE(LAST(\"stall_reopens\")) FROM \"forever\".\"navien_bus\" WHERE $timeFilter GROUP BY time(1m) fill(none)",
+          "rawQuery": true,
+          "resultFormat": "time_series",
+          "alias": "Port reopens",
+          "refId": "C"
         }
       ],
       "fieldConfig": {

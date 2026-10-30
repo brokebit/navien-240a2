@@ -163,11 +163,19 @@ class ReplaySource:
 
 
 class Reader(threading.Thread):
-    """Owns the source. Reconnects with backoff if a serial adapter disappears."""
+    """Owns the source. Reconnects with backoff if a serial adapter disappears.
+
+    With stall_s set, a port that stays open but delivers no bytes for that long is closed
+    and reopened. The bus is never quiet for more than ~0.2 s, so silence means the adapter
+    stopped reading: ftdi_sio logs "urb stopped: -32" for each of its two read URBs it gives
+    up on and only resubmits them on open. While the bus stays silent (or the heaters are
+    off) the wait doubles up to stall_max_s, and is back at stall_s once bytes arrive.
+    """
 
     def __init__(self, source, on_frames: Callable[[list[Frame]], None],
                  on_bytes: Callable[[float, bytes], object] | None = None,
-                 on_finished: Callable[[], None] | None = None) -> None:
+                 on_finished: Callable[[], None] | None = None,
+                 stall_s: float = 0.0, stall_max_s: float = 60.0) -> None:
         super().__init__(name="reader", daemon=True)
         self.source = source
         self.on_frames = on_frames
@@ -178,6 +186,11 @@ class Reader(threading.Thread):
         self.connected = False
         self.last_error: str | None = None
         self.bytes_total = 0
+        self.stall_s = stall_s            # 0 = never reopen a silent port
+        self.stall_max_s = max(stall_max_s, stall_s)
+        self._stall_wait = stall_s
+        self.stall_reopens = 0
+        self.last_stall_reopen_at: float | None = None
 
     def stop(self, timeout: float = 2.0) -> None:
         self._stop_evt.set()
@@ -192,7 +205,14 @@ class Reader(threading.Thread):
                     self.connected = True
                     self.last_error = None
                     backoff = 1.0
-                    self._pump()
+                    if self._pump() == "stalled":
+                        self.stall_reopens += 1
+                        self.last_stall_reopen_at = time.time()
+                        log.warning("no bytes from %s for %.0f s; reopening it (reopen %d)",
+                                    getattr(self.source, "port", "source"), self._stall_wait,
+                                    self.stall_reopens)
+                        self._stall_wait = min(self._stall_wait * 2, self.stall_max_s)
+                        continue                 # finally closes; reopen at once
                     if self.source.finished:
                         break
                 except Exception as e:           # serial.SerialException, OSError, ...
@@ -208,11 +228,17 @@ class Reader(threading.Thread):
             if self.on_finished is not None:
                 self.on_finished()
 
-    def _pump(self) -> None:
+    def _pump(self) -> str | None:
+        """Read until stopped or finished; "stalled" if the source went silent too long."""
+        last_data = time.monotonic()
         while not self._stop_evt.is_set() and not self.source.finished:
             ts, data = self.source.read()
             if not data:
+                if self.stall_s and time.monotonic() - last_data >= self._stall_wait:
+                    return "stalled"
                 continue
+            last_data = time.monotonic()
+            self._stall_wait = self.stall_s
             self.bytes_total += len(data)
             if self.on_bytes is not None:
                 self.on_bytes(ts, data)

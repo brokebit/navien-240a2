@@ -183,8 +183,16 @@ function renderStatus() {
     detail = "Lost the connection to the monitor service; retrying.";
   } else if (app.health && !app.health.bus_alive) {
     cls = "critical"; label = "No data from heaters";
-    const err = app.health.reader && app.health.reader.last_error;
-    detail = err ? `RS-485 adapter: ${err}` : "The monitor is running but receives no frames from the bus.";
+    const r = app.health.reader || {};
+    if (r.last_error) {
+      detail = `RS-485 adapter: ${r.last_error}`;
+    } else if (r.last_stall_reopen_at) {
+      const ago = Math.max(0, Date.now() / 1000 - r.last_stall_reopen_at);
+      detail = `The RS-485 adapter delivers no bytes; the monitor reopens the port while it stays ` +
+        `silent (${fmtNumber(r.stall_reopens)} reopens, last ${fmtAge(ago)} ago).`;
+    } else {
+      detail = "The monitor is running but receives no frames from the bus.";
+    }
   } else if (age === null || age > STALE_S) {
     cls = "warning"; label = "Waiting for data";
   } else {

@@ -113,6 +113,10 @@ source of truth for the byte map; fixes do not flow back into the script.
 - **SerialSource** — pyserial, 19200 8N1, `timeout=0.05`, reads `in_waiting or 1`.
   Reconnects with backoff if the adapter disappears (USB unplug), and reports
   `bus_alive=false` meanwhile instead of crashing.
+  If the port stays open but delivers no bytes for `serial.stall_reopen_s` (default 10 s),
+  the reader closes and reopens it; while it stays silent the wait doubles up to
+  `serial.stall_reopen_max_s` (60 s). This recovers from ftdi_sio giving up on its read
+  URBs (`urb stopped: -32`), which leaves an open port that never returns data (v0.7.4).
 - **ReplaySource** — reads a `.raw` file (plus `.idx` if present) and feeds it at real-time
   pace (or `--speed N`, looping optional). Without `.idx`, timing is synthesised from
   frame boundaries at the known 1 s cycle. This allows developing and testing the whole
@@ -674,3 +678,17 @@ an offline analyzer tool.
   `/api/health`, the WebSocket hello and the startup log line. `scripts/build-deb.sh` writes
   it into the package (`navien/_version.py`, gitignored); a dev tree derives it from
   `git describe` (`navien/version.py`) (v0.7.3).
+- 2026-10-30 — Silent-port recovery (v0.7.4). On 2026-10-29 at 19:57 the kernel logged
+  `ftdi_sio ttyUSB0: usb_serial_generic_read_bulk_callback - urb stopped: -32` and the
+  service got no data until it was restarted by hand. The same error at 13:18 that day
+  (same process) did no harm: the generic USB-serial driver keeps two read URBs, does not
+  resubmit one that fails with EPIPE, and resubmits both only when the port is opened, so the
+  first error halved the reads and the second stopped them. The port stays open and raises
+  nothing, so the reconnect-on-exception path never ran. `Reader` now reopens a port that has
+  delivered no bytes for `serial.stall_reopen_s` (10 s; doubling to `stall_reopen_max_s`,
+  60 s, while silent, so heaters that are off cost one reopen a minute). Counted as
+  `reader.stall_reopens` / `last_stall_reopen_at` in `/api/health`, `stall_reopens` in
+  `navien_bus` (Detail dashboard "Bus errors per minute"), a warning per reopen and
+  "port reopened N×" in the status line; the web dashboard explains it under "No data from
+  heaters" and counts it in the debug view. Not done: a USB device reset if reopening ever
+  fails to bring data back (needs root or a looser udev rule).

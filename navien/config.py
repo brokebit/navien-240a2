@@ -11,6 +11,8 @@ from pathlib import Path
 class SerialCfg:
     port: str = "/dev/navien"
     baud: int = 19200
+    stall_reopen_s: float = 10.0       # reopen the port after this long without a byte; 0 = off
+    stall_reopen_max_s: float = 60.0   # while it stays silent, the wait doubles up to this
 
 
 @dataclass

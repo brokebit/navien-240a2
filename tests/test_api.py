@@ -87,6 +87,7 @@ def test_health(replay_client):
     h = replay_client.get("/api/health").json()
     assert h["bus"]["frames"] == 420 and h["bus"]["checksum_fail"] == 0
     assert h["reader"]["resyncs"] == 0 and h["rawlog"] is None
+    assert h["reader"]["stall_reopens"] == 0          # replay never reopens
     assert h["history_cycles"] > 0 and h["bus"]["cycle_ms"] is not None
     assert h["version"] and h["version"] != "unknown"
     assert replay_client.get("/api").json()["version"] == h["version"]

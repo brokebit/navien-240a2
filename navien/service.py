@@ -60,7 +60,9 @@ class Service:
         self._influx_task: asyncio.Task | None = None
         self.reader = Reader(source, on_frames=self._from_reader,
                              on_bytes=self.rawlog.put if self.rawlog else None,
-                             on_finished=self._reader_finished)
+                             on_finished=self._reader_finished,
+                             stall_s=0.0 if replay else cfg.serial.stall_reopen_s,
+                             stall_max_s=cfg.serial.stall_reopen_max_s)
         self.loop: asyncio.AbstractEventLoop | None = None
         self.finished: asyncio.Event | None = None
         self._ticker: asyncio.Task | None = None
@@ -154,7 +156,8 @@ class Service:
     def _counters(self) -> dict:
         b = self.state.bus_stats()
         c = {"t": time.monotonic(), "cycles": self.cycles, "frames": b["frames"],
-             "bad": b["checksum_fail"], "resyncs": self.reader.parser.resyncs}
+             "bad": b["checksum_fail"], "resyncs": self.reader.parser.resyncs,
+             "reopens": self.reader.stall_reopens}
         if self.influx:
             c |= {"written": self.influx.written, "dropped": self.influx.dropped,
                   "rejected": self.influx.rejected}
@@ -176,6 +179,8 @@ class Service:
             bus = f"NO DATA for {h['last_frame_age_s']:.0f} s"
         parts = [f"bus {bus}, {d['cycles']} cycles, {d['frames']} frames, {d['bad']} bad, "
                  f"{d['resyncs']} resyncs"]
+        if d["reopens"]:
+            parts[0] += f", port reopened {d['reopens']}×"
         if self.influx:
             s = f"influx {d['written']} written, {self.influx.queued} queued"
             if d["dropped"] or d["rejected"]:
@@ -195,6 +200,7 @@ class Service:
         return {
             "resyncs": self.reader.parser.resyncs,
             "reader_bytes": self.reader.bytes_total,
+            "stall_reopens": self.reader.stall_reopens,
             "rawlog_dropped_chunks": self.rawlog.dropped_chunks if self.rawlog else 0,
             "ws_clients": sum(1 for s in self.hub.subscribers if s.name.startswith("ws")),
         }
@@ -227,6 +233,8 @@ class Service:
                 "last_error": self.reader.last_error,
                 "bytes": self.reader.bytes_total,
                 "resyncs": self.reader.parser.resyncs,
+                "stall_reopens": self.reader.stall_reopens,
+                "last_stall_reopen_at": self.reader.last_stall_reopen_at,
             },
             "bus": self.state.bus_stats(),
             "history_cycles": len(self.state.history),

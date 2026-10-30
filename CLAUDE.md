@@ -183,6 +183,9 @@ v0.7.3 (2026-10-29): Influx status pill on the web dashboard, `navien-dash` jour
 a once-a-minute `status (60 s): …` log line, version in the footer. Installed and running
 (status line confirmed in the journal 2026-10-29); the pill's hover tooltip is not yet
 confirmed by the user.
+v0.7.4 (pending review): the reader reopens the serial port after 10 s without a byte, for
+the ftdi_sio `urb stopped: -32` stall of 2026-10-29 19:57 (PLAN.md changelog). Not yet seen
+recovering a real stall.
 New work is feature requests from the user, each reviewed before release. Gas price is a
 dashboard variable (default $0.65/therm, the user's all-in rate incl. fees; commodity alone
 is $0.33). Grafana 13.2.4, data source `influxdb-navien`; the user uploads dashboards with

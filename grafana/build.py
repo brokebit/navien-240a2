@@ -488,7 +488,11 @@ def detail() -> dict:
             q(f'SELECT NON_NEGATIVE_DIFFERENCE(LAST("checksum_fail")) FROM {BUS} WHERE $timeFilter '
               "GROUP BY time(1m) fill(none)", "Checksum failures"),
             q(f'SELECT NON_NEGATIVE_DIFFERENCE(LAST("resyncs")) FROM {BUS} WHERE $timeFilter '
-              "GROUP BY time(1m) fill(none)", "Resyncs")], "", w=12, decimals=0),
+              "GROUP BY time(1m) fill(none)", "Resyncs"),
+            q(f'SELECT NON_NEGATIVE_DIFFERENCE(LAST("stall_reopens")) FROM {BUS} WHERE $timeFilter '
+              "GROUP BY time(1m) fill(none)", "Port reopens")], "", w=12, decimals=0,
+            desc="Port reopens: the adapter delivered nothing for serial.stall_reopen_s and was "
+                 "reopened. Counted when data is back (no bus points while it is silent)."),
         series("Influx writer", [
             q(f'SELECT LAST("influx_queued") FROM {BUS} WHERE $timeFilter GROUP BY time(1m) fill(none)', "Queued"),
             q(f'SELECT NON_NEGATIVE_DIFFERENCE(LAST("influx_dropped")) FROM {BUS} WHERE $timeFilter '
